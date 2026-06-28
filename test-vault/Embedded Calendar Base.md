@@ -4,7 +4,7 @@ filters:
   and:
     - file.hasTag("event")
 views:
-  - type: calendar
+  - type: calendar-fork
     name: Calendar
     order:
       - file.name
