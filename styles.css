@@ -98,27 +98,10 @@ body {
     font-weight: inherit !important;
   }
 
-  /* ── scrollgrid section ─────────────────────────────────────────────────
-   * `.markdown-rendered thead tr > th:first-child` sets border-left-width,
-   *  overriding FC's `.fc .fc-scrollgrid-section > *` border-left-width: 0,
-   *  which causes a doubled left border on the scrollgrid.
-   * The header section's child <td> must also have border-bottom: 0 because
-   *  the <th> cells inside already provide the bottom border — without this,
-   *  our `fc-theme-standard td { border-width: 1px }` doubles it.
+  /* Note: scrollgrid section/border normalization that FullCalendar needs in
+   * BOTH embedded and standalone contexts now lives in the shared
+   * `.bases-calendar-container` appearance block below (single source of truth).
    */
-  .fc .fc-scrollgrid-section > * {
-    border-left-width: 0 !important;
-    border-top-width: 0 !important;
-    border-right-width: 0 !important;
-  }
-  .fc .fc-scrollgrid-section-header > * {
-    border-bottom-width: 0 !important;
-  }
-  /* Body section cell: inner day cells provide right + bottom borders,
-     so zeroing avoids doubling against the separate-collapse scrollgrid */
-  .fc .fc-scrollgrid-section:not(.fc-scrollgrid-section-header) > * {
-    border-bottom-width: 0 !important;
-  }
 
   /* ── tbody ──────────────────────────────────────────────────────────────
    * Some themes (Baseline, Cupertino) set a background-color on
@@ -136,31 +119,6 @@ body {
    */
   :where(tbody tr) {
     background-color: transparent !important;
-  }
-
-  /* ── td border widths ───────────────────────────────────────────────────
-   * `.markdown-rendered tbody tr:last-child > td` removes the bottom border
-   *  and `.markdown-rendered tbody tr > td:first-child/:last-child` removes
-   *  left/right borders for markdown table edge styling. This strips borders
-   *  from calendar day cells. Also Minimal theme sets all borders to 0.
-   *  We restore FullCalendar's expected 1px borders on all sides.
-   */
-  .fc-theme-standard td,
-  .fc-theme-standard th {
-    border-width: 1px !important;
-  }
-
-  /* ── scrollgrid outer border ────────────────────────────────────────────
-   * Minimal theme overrides border-color on .markdown-rendered table
-   *  to a dark colour (rgb(15,15,15)); we restore FC's expected colour.
-   * The outer scrollgrid uses border-collapse: separate (unlike inner
-   *  tables which use collapse) to keep its own border distinct.
-   */
-  .fc-theme-standard .fc-scrollgrid {
-    border-width: 1px !important;
-    border-style: solid !important;
-    border-color: var(--background-modifier-border) !important;
-    border-collapse: separate !important;
   }
 
   /* ── cursor ─────────────────────────────────────────────────────────────
@@ -192,13 +150,54 @@ body {
  * specificity) these rules win by source order.
  * ──────────────────────────────────────────────────────────────────────────── */
 .bases-calendar-container {
+  width: 100%;
+
   .fc {
     font-family: var(--font-interface);
   }
 
+  /* ── full width ─────────────────────────────────────────────────────────
+   * Make FullCalendar's tables fill the column in the standalone base view
+   * (in embedded mode the markdown-preflight already forces width: 100%).
+   */
+  table {
+    width: 100% !important;
+  }
+
+  /* ── border normalization (single source of truth) ──────────────────────
+   * FullCalendar's default scrollgrid borders double up and read as thick
+   * white bars at the top/bottom of the grid in dark mode. These rules give
+   * the grid exactly one 1px border per edge in BOTH the standalone base view
+   * and the embedded (markdown) view. !important so the embedded markdown
+   * table styles can't override them.
+   */
   .fc-theme-standard td,
   .fc-theme-standard th {
-    border-color: var(--background-modifier-border);
+    border-width: 1px !important;
+    border-color: var(--background-modifier-border) !important;
+  }
+
+  /* Zero the scrollgrid section wrappers' own borders — the inner day cells
+     and header cells provide the visible 1px lines, so this avoids doubling
+     against the separate-collapse outer scrollgrid. */
+  .fc .fc-scrollgrid-section > * {
+    border-left-width: 0 !important;
+    border-top-width: 0 !important;
+    border-right-width: 0 !important;
+  }
+  .fc .fc-scrollgrid-section-header > * {
+    border-bottom-width: 0 !important;
+  }
+  .fc .fc-scrollgrid-section:not(.fc-scrollgrid-section-header) > * {
+    border-bottom-width: 0 !important;
+  }
+
+  /* Outer scrollgrid: a single 1px border-box around the whole grid. */
+  .fc-theme-standard .fc-scrollgrid {
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: var(--background-modifier-border) !important;
+    border-collapse: separate !important;
   }
 
   .fc-header-toolbar {
@@ -259,6 +258,18 @@ body {
     background-color: var(--background-primary) !important;
   }
 
+  /* Days outside a fixed window (the leading/trailing days from week-snapping)
+     are greyed and dimmed so the selected window stands out. */
+  .fc-daygrid-day.cb-out-of-window {
+    background-color: var(--background-secondary) !important;
+  }
+  .cb-out-of-window .fc-daygrid-day-number {
+    opacity: 0.3;
+  }
+  .cb-out-of-window .fc-daygrid-day-events {
+    opacity: 0.45;
+  }
+
   .fc-highlight {
     background-color: var(--interactive-accent) !important;
     opacity: 0.3 !important;
@@ -290,7 +301,10 @@ body {
   }
 
   .fc-event {
-    background-color: var(--background-secondary) !important;
+    /* No !important so a per-event color (set inline by FullCalendar from the
+       resolved color) wins; uncolored events fall back to the global default
+       (--cb-default-color, set from settings) or the theme accent. */
+    background-color: var(--cb-default-color, var(--interactive-accent));
     border: none !important;
     border-radius: 3px !important;
     font-weight: 500 !important;
@@ -341,5 +355,94 @@ body {
   display: flex;
   flex-direction: column;
   padding: 2px 0px;
+}
+
+/* ── thumbnail ──────────────────────────────────────────────────────────────
+ * Small note preview image shown above the event content (block mode).
+ */
+.bases-calendar-event-thumbnail {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 80px;
+  object-fit: cover;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+
+/* ── dot display mode ────────────────────────────────────────────────────────
+ * Compact "dot + title" rows instead of full event blocks. FullCalendar renders
+ * these as .fc-daygrid-dot-event when eventDisplay is "list-item".
+ */
+.bases-calendar-container .fc-daygrid-dot-event {
+  background-color: transparent !important;
+  padding: 1px 2px !important;
+}
+
+.bases-calendar-container .fc-daygrid-dot-event .fc-daygrid-event-dot {
+  /* Hide FullCalendar's built-in dot — we render our own colored one. */
+  display: none !important;
+}
+
+.bases-calendar-event-dot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+}
+
+.bases-calendar-event-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--cb-default-color, var(--interactive-accent));
+}
+
+.bases-calendar-event-dot-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dot mode, multi-day event: a thin colored spanning bar (not a dot). */
+.bases-calendar-container .fc-event.cb-dot-bar {
+  border-radius: 3px !important;
+  margin: 1px 0 !important;
+}
+
+.bases-calendar-event-dot-bar {
+  padding: 0 6px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── color picker modal swatches ───────────────────────────────────────────── */
+.cb-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.cb-color-swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.cb-color-swatch:hover {
+  transform: scale(1.1);
 }
 

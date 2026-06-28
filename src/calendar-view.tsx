@@ -10,15 +10,68 @@ import {
 } from "obsidian";
 import React, { StrictMode } from "react";
 import { createRoot, Root } from "react-dom/client";
-import { CalendarHandle, CalendarReactView } from "./CalendarReactView";
+import {
+  CalendarDisplayMode,
+  CalendarHandle,
+  CalendarReactView,
+} from "./CalendarReactView";
 import { AppContext } from "./context";
+import { ColorPickerModal } from "./color-modal";
+import type ObsidianCalendarPlugin from "./main";
 
-export const CalendarViewType = "calendar";
+export const CalendarViewType = "calendar-fork";
 
 interface CalendarEntry {
   entry: BasesEntry;
   startDate: Date;
   endDate?: Date;
+}
+
+/**
+ * Parse "value=color" color rules into a lowercased lookup map. Accepts the
+ * multitext form (string[] of "meeting=#4f8ef7"), a single string with newline-
+ * or comma-separated rules, or a YAML object map written directly in the base.
+ */
+function parseColorRules(value: unknown): Record<string, string> {
+  const map: Record<string, string> = {};
+
+  const addRule = (raw: string): void => {
+    const sep = raw.search(/[=:]/);
+    if (sep === -1) return;
+    const key = raw.slice(0, sep).trim().toLowerCase();
+    const color = raw.slice(sep + 1).trim();
+    if (key && color) map[key] = color;
+  };
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string") addRule(item);
+    }
+  } else if (typeof value === "string") {
+    for (const line of value.split(/[\n,]/)) addRule(line);
+  } else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim()) {
+        map[k.trim().toLowerCase()] = v.trim();
+      }
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Coerce a config value to a "YYYY-MM-DD" string. Obsidian's YAML parses an
+ * unquoted date like `2026-07-04` into a Date object, so handle both that and
+ * plain/ISO strings; anything else becomes "".
+ */
+function toDateString(value: unknown): string {
+  if (!value) return "";
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
+  }
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(value).trim());
+  return m ? m[1] : "";
 }
 
 export class CalendarView extends BasesView {
@@ -33,8 +86,25 @@ export class CalendarView extends BasesView {
   private startDateProp: BasesPropertyId | null = null;
   private endDateProp: BasesPropertyId | null = null;
   private weekStartDay: number = 1;
+  private displayMode: CalendarDisplayMode = "block";
+  private colorProp: BasesPropertyId | null = null;
+  private colorByProp: BasesPropertyId | null = null;
+  private colorMap: Record<string, string> = {};
+  private showThumbnail: boolean = false;
+  private imageProp: BasesPropertyId | null = null;
+  private titleRegex: string = "";
+  private maxEventsPerDay: number = 0;
+  private windowStart: string = "";
+  private windowEnd: string = "";
+  // Global settings (linked-note color), read from the plugin in loadConfig.
+  private categoryProperty: string = "";
+  private linkedColorProperty: string = "color";
 
-  constructor(controller: QueryController, scrollEl: HTMLElement) {
+  constructor(
+    controller: QueryController,
+    scrollEl: HTMLElement,
+    private plugin: ObsidianCalendarPlugin,
+  ) {
     super(controller);
     this.scrollEl = scrollEl;
     this.containerEl = scrollEl.createDiv({
@@ -44,10 +114,11 @@ export class CalendarView extends BasesView {
   }
 
   onload(): void {
-    // React components will handle their own lifecycle
+    this.plugin.registerCalendarView(this);
   }
 
   onunload() {
+    this.plugin.unregisterCalendarView(this);
     if (this.root) {
       this.root.unmount();
       this.root = null;
@@ -73,7 +144,6 @@ export class CalendarView extends BasesView {
   private loadConfig(): void {
     this.startDateProp = this.config.getAsPropertyId("startDate");
     this.endDateProp = this.config.getAsPropertyId("endDate");
-    const weekStartDayValue = this.config.get("weekStartDay") as string;
 
     const dayNameToNumber: Record<string, number> = {
       sunday: 0,
@@ -85,9 +155,35 @@ export class CalendarView extends BasesView {
       saturday: 6,
     };
 
-    this.weekStartDay = weekStartDayValue
-      ? (dayNameToNumber[weekStartDayValue] ?? 1)
-      : 1; // Default to Monday
+    // Per-base value, else the global default, else Sunday.
+    const weekStartName =
+      (this.config.get("weekStartDay") as string) ||
+      this.plugin.settings.defaultWeekStart ||
+      "sunday";
+    this.weekStartDay = dayNameToNumber[weekStartName] ?? 0;
+
+    // Per-base value, else the global default, else block.
+    const displayModeValue =
+      (this.config.get("displayMode") as string) ||
+      this.plugin.settings.defaultDisplayMode ||
+      "block";
+    this.displayMode = displayModeValue === "dot" ? "dot" : "block";
+
+    this.colorProp = this.config.getAsPropertyId("colorProperty");
+    this.colorByProp = this.config.getAsPropertyId("colorByProperty");
+    this.colorMap = parseColorRules(this.config.get("colorRules"));
+    this.showThumbnail = Boolean(this.config.get("showThumbnail"));
+    this.imageProp = this.config.getAsPropertyId("imageProperty");
+    this.titleRegex = (this.config.get("titleRegex") as string) || "";
+    this.maxEventsPerDay =
+      parseInt(this.config.get("maxEventsPerDay") as string, 10) || 0;
+    this.windowStart = toDateString(this.config.get("windowStart"));
+    this.windowEnd = toDateString(this.config.get("windowEnd"));
+
+    // Linked-note color comes from global plugin settings.
+    this.categoryProperty = this.plugin.settings.categoryProperty;
+    this.linkedColorProperty =
+      this.plugin.settings.linkedColorProperty || "color";
   }
 
   private updateCalendar(): void {
@@ -123,6 +219,15 @@ export class CalendarView extends BasesView {
       this.root = createRoot(this.containerEl);
     }
 
+    // Override the default (uncolored) event color via a CSS variable; empty
+    // falls back to the theme accent (see styles.css).
+    const defaultColor = this.plugin.settings.defaultColor;
+    if (defaultColor) {
+      this.containerEl.style.setProperty("--cb-default-color", defaultColor);
+    } else {
+      this.containerEl.style.removeProperty("--cb-default-color");
+    }
+
     this.root.render(
       <StrictMode>
         <AppContext.Provider value={this.app}>
@@ -130,6 +235,18 @@ export class CalendarView extends BasesView {
             entries={this.entries}
             weekStartDay={this.weekStartDay}
             properties={this.config.getOrder() || []}
+            displayMode={this.displayMode}
+            colorProperty={this.colorProp}
+            colorByProperty={this.colorByProp}
+            colorMap={this.colorMap}
+            categoryProperty={this.categoryProperty}
+            linkedColorProperty={this.linkedColorProperty}
+            showThumbnail={this.showThumbnail}
+            imageProperty={this.imageProp}
+            titleRegex={this.titleRegex}
+            maxEventsPerDay={this.maxEventsPerDay}
+            windowStart={this.windowStart}
+            windowEnd={this.windowEnd}
             onEntryClick={(entry, isModEvent) => {
               void this.app.workspace.openLinkText(
                 entry.file.path,
@@ -189,12 +306,45 @@ export class CalendarView extends BasesView {
 
     menu.addItem((item) =>
       item
+        .setSection("action")
+        .setTitle("Set color…")
+        .setIcon("lucide-palette")
+        .onClick(() => {
+          const current =
+            this.app.metadataCache.getCache(file.path)?.frontmatter?.color ??
+            "";
+          new ColorPickerModal(
+            this.app,
+            String(current),
+            this.plugin.settings.palette,
+            (color) => {
+              void this.setEntryColor(entry, color);
+            },
+          ).open();
+        }),
+    );
+
+    menu.addItem((item) =>
+      item
         .setSection("danger")
         .setTitle("Delete file")
         .setIcon("lucide-trash-2")
         .setWarning(true)
         .onClick(() => this.app.fileManager.promptForDeletion(file)),
     );
+  }
+
+  private async setEntryColor(
+    entry: BasesEntry,
+    color: string | null,
+  ): Promise<void> {
+    await this.app.fileManager.processFrontMatter(entry.file, (frontmatter) => {
+      if (color) {
+        frontmatter.color = color;
+      } else {
+        delete frontmatter.color;
+      }
+    });
   }
 
   private async updateEntryDates(
@@ -275,8 +425,9 @@ export class CalendarView extends BasesView {
             displayName: "Week starts on",
             type: "dropdown",
             key: "weekStartDay",
-            default: "monday",
+            default: "",
             options: {
+              "": "Use global default",
               sunday: "Sunday",
               monday: "Monday",
               tuesday: "Tuesday",
@@ -285,6 +436,76 @@ export class CalendarView extends BasesView {
               friday: "Friday",
               saturday: "Saturday",
             },
+          },
+          {
+            displayName: "Window start (YYYY-MM-DD)",
+            type: "text",
+            key: "windowStart",
+            placeholder: "e.g. 2026-08-01",
+          },
+          {
+            displayName: "Window end (YYYY-MM-DD)",
+            type: "text",
+            key: "windowEnd",
+            placeholder: "e.g. 2026-09-30",
+          },
+        ],
+      },
+      {
+        displayName: "Display",
+        type: "group",
+        items: [
+          {
+            displayName: "Display mode",
+            type: "dropdown",
+            key: "displayMode",
+            default: "",
+            options: {
+              "": "Use global default",
+              block: "Block",
+              dot: "Dot",
+            },
+          },
+          {
+            displayName: "Color property",
+            type: "property",
+            key: "colorProperty",
+            placeholder: "Property",
+          },
+          {
+            displayName: "Color by property",
+            type: "property",
+            key: "colorByProperty",
+            placeholder: "Property",
+          },
+          {
+            displayName: "Color rules (value=color)",
+            type: "multitext",
+            key: "colorRules",
+          },
+          {
+            displayName: "Show image thumbnail",
+            type: "toggle",
+            key: "showThumbnail",
+            default: false,
+          },
+          {
+            displayName: "Remove from title (regex)",
+            type: "text",
+            key: "titleRegex",
+            placeholder: "^\\d{4}-\\d{2}-\\d{2}\\s*",
+          },
+          {
+            displayName: "Image property (optional)",
+            type: "property",
+            key: "imageProperty",
+            placeholder: "Property",
+          },
+          {
+            displayName: "Max events per day",
+            type: "text",
+            key: "maxEventsPerDay",
+            placeholder: "unlimited",
           },
         ],
       },
