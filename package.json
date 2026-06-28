@@ -1,7 +1,7 @@
 {
-	"name": "calendar-bases",
+	"name": "calendar-bases-fork",
 	"version": "0.2.8",
-	"description": "Adds a calendar layout to Obsidian Bases.",
+	"description": "Adds a calendar layout to Obsidian Bases (personal fork).",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

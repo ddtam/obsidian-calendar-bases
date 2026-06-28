@@ -13,7 +13,7 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = (process.argv[2] === "production");
 
-const testVaultPluginDir = join("test-vault", ".obsidian", "plugins", "calendar-bases");
+const testVaultPluginDir = join("test-vault", ".obsidian", "plugins", "calendar-bases-fork");
 
 // Plugin to copy build artifacts to test vault
 const copyToTestVault = {
