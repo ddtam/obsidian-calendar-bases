@@ -24,7 +24,7 @@ interface CalendarReactViewProps {
   properties: BasesPropertyId[];
   displayMode: CalendarDisplayMode;
   colorProperty: BasesPropertyId | null;
-  colorByProperty: BasesPropertyId | null;
+  colorByProperty: string;
   colorMap: Record<string, string>;
   categoryProperty: string;
   linkedColorProperty: string;
@@ -462,7 +462,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
               alt=""
             />
           )}
-          {body}
+          <div className="bases-calendar-event-body">{body}</div>
         </div>
       );
     },
@@ -589,7 +589,7 @@ function computeRelevantDate(entries: CalendarEntry[]): Date {
 
 interface ColorConfig {
   colorProperty: BasesPropertyId | null;
-  colorByProperty: BasesPropertyId | null;
+  colorByProperty: string;
   colorMap: Record<string, string>;
   categoryProperty: string;
   linkedColorProperty: string;
@@ -627,18 +627,17 @@ function extractColor(
     }
   }
 
-  // 3. value→color rules.
+  // 3. value→color rules (global): match the named frontmatter property's
+  // value(s) against the rule map.
   if (cfg.colorByProperty && Object.keys(cfg.colorMap).length > 0) {
-    const value = tryGetValue(entry, cfg.colorByProperty);
-    if (value && value.isTruthy()) {
-      const raw = value.toString().trim().toLowerCase();
-      if (raw.length > 0) {
-        if (cfg.colorMap[raw]) return cfg.colorMap[raw];
-        for (const token of raw.split(",")) {
-          const t = token.trim();
-          if (t && cfg.colorMap[t]) return cfg.colorMap[t];
-        }
-      }
+    const raw = app.metadataCache.getCache(entry.file.path)?.frontmatter?.[
+      cfg.colorByProperty
+    ];
+    const values = Array.isArray(raw) ? raw : [raw];
+    for (const v of values) {
+      if (typeof v !== "string") continue;
+      const key = v.trim().toLowerCase();
+      if (key && cfg.colorMap[key]) return cfg.colorMap[key];
     }
   }
 

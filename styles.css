@@ -335,15 +335,26 @@ body {
 }
 
 .bases-calendar-event-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   padding: 4px 6px;
   font-size: var(--font-ui-smaller);
   color: var(--text-normal);
   overflow: hidden;
 }
 
+/* Holds the title + properties; min-width:0 lets the title ellipsize. */
+.bases-calendar-event-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .bases-calendar-event-title {
   font-weight: var(--font-semibold);
   margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bases-calendar-event-properties {
@@ -357,17 +368,22 @@ body {
   padding: 2px 0px;
 }
 
+.bases-calendar-event-property-value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── thumbnail ──────────────────────────────────────────────────────────────
- * Small note preview image shown above the event content (block mode).
+ * Compact square note preview shown to the left of the event content (block
+ * mode) so it stays unobtrusive in dense month cells.
  */
 .bases-calendar-event-thumbnail {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 80px;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
   object-fit: cover;
   border-radius: 3px;
-  margin-bottom: 4px;
 }
 
 /* ── dot display mode ────────────────────────────────────────────────────────
@@ -376,7 +392,8 @@ body {
  */
 .bases-calendar-container .fc-daygrid-dot-event {
   background-color: transparent !important;
-  padding: 1px 2px !important;
+  padding: 1px 4px !important;
+  margin-bottom: 2px !important;
 }
 
 .bases-calendar-container .fc-daygrid-dot-event .fc-daygrid-event-dot {
@@ -389,6 +406,7 @@ body {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  line-height: 1.4;
   font-size: var(--font-ui-smaller);
   color: var(--text-normal);
 }
@@ -407,14 +425,14 @@ body {
   white-space: nowrap;
 }
 
-/* Dot mode, multi-day event: a thin colored spanning bar (not a dot). */
+/* Dot mode, multi-day event: a thin colored spanning bar (not a dot). Inherit
+   the same 2px bottom margin as dot rows so a mixed day stacks evenly. */
 .bases-calendar-container .fc-event.cb-dot-bar {
   border-radius: 3px !important;
-  margin: 1px 0 !important;
 }
 
 .bases-calendar-event-dot-bar {
-  padding: 0 6px;
+  padding: 1px 6px;
   font-size: var(--font-ui-smaller);
   font-weight: 500;
   line-height: 1.4;
@@ -422,6 +440,39 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── "+N more" link and its popover ──────────────────────────────────────────
+ * FullCalendar's defaults look light/un-themed in dark mode.
+ */
+.bases-calendar-container .fc-daygrid-more-link {
+  color: var(--text-muted) !important;
+  font-size: var(--font-ui-smaller) !important;
+  font-weight: 500 !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
+}
+.bases-calendar-container .fc-daygrid-more-link:hover {
+  color: var(--text-normal) !important;
+  background-color: var(--background-modifier-hover) !important;
+}
+
+.bases-calendar-container .fc-popover {
+  background-color: var(--background-primary) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  border-radius: 6px !important;
+  box-shadow: var(--shadow-s) !important;
+}
+.bases-calendar-container .fc-popover-header {
+  background-color: var(--background-secondary) !important;
+  color: var(--text-normal) !important;
+  padding: 6px 8px !important;
+}
+.bases-calendar-container .fc-popover-title {
+  font-weight: 600 !important;
+}
+.bases-calendar-container .fc-popover-body {
+  padding: 6px !important;
 }
 
 /* ── color picker modal swatches ───────────────────────────────────────────── */

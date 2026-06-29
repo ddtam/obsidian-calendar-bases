@@ -12,6 +12,10 @@ export interface CalendarBasesSettings {
   categoryProperty: string;
   /** The property on the linked category note that holds the color. */
   linkedColorProperty: string;
+  /** A frontmatter property whose value is matched against colorRules. */
+  colorByProperty: string;
+  /** value→color rules applied vault-wide (matched against colorByProperty). */
+  colorRules: { value: string; color: string }[];
   /** Preset swatches shown in the right-click "Set color" picker. */
   palette: string[];
   /** Default display mode for calendar views that don't set their own. */
@@ -34,6 +38,8 @@ export const DEFAULT_SETTINGS: CalendarBasesSettings = {
   defaultColor: "",
   categoryProperty: "",
   linkedColorProperty: "color",
+  colorByProperty: "",
+  colorRules: [],
   palette: [...DEFAULT_PALETTE],
   defaultDisplayMode: "block",
   defaultWeekStart: "sunday",
@@ -154,6 +160,62 @@ export class CalendarBasesSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+
+    new Setting(containerEl).setName("Color by value").setHeading();
+
+    new Setting(containerEl)
+      .setName("Property")
+      .setDesc(
+        'A frontmatter property whose value selects a color from the rules below (e.g. "type" → meeting/trip/…). Leave empty to disable.',
+      )
+      .addText((t) => {
+        t.setPlaceholder("e.g. type")
+          .setValue(this.plugin.settings.colorByProperty)
+          .onChange(async (value) => {
+            this.plugin.settings.colorByProperty = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Rules")
+      .setDesc("Map each property value to a color.")
+      .addButton((b) =>
+        b.setButtonText("Add rule").onClick(async () => {
+          this.plugin.settings.colorRules.push({ value: "", color: "#4f8ef7" });
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    this.plugin.settings.colorRules.forEach((rule, i) => {
+      new Setting(containerEl)
+        .addText((t) => {
+          t.setPlaceholder("value (e.g. meeting)")
+            .setValue(rule.value)
+            .onChange(async (value) => {
+              this.plugin.settings.colorRules[i].value = value;
+              await this.plugin.saveSettings();
+            });
+        })
+        .addColorPicker((cp) => {
+          cp.setValue(toHex(rule.color));
+          cp.onChange(async (value) => {
+            this.plugin.settings.colorRules[i].color = value;
+            await this.plugin.saveSettings();
+          });
+        })
+        .addExtraButton((b) =>
+          b
+            .setIcon("trash-2")
+            .setTooltip("Remove")
+            .onClick(async () => {
+              this.plugin.settings.colorRules.splice(i, 1);
+              await this.plugin.saveSettings();
+              this.display();
+            }),
+        );
+    });
 
     new Setting(containerEl).setName("Color palette").setHeading();
 

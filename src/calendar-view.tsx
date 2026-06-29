@@ -28,39 +28,6 @@ interface CalendarEntry {
 }
 
 /**
- * Parse "value=color" color rules into a lowercased lookup map. Accepts the
- * multitext form (string[] of "meeting=#4f8ef7"), a single string with newline-
- * or comma-separated rules, or a YAML object map written directly in the base.
- */
-function parseColorRules(value: unknown): Record<string, string> {
-  const map: Record<string, string> = {};
-
-  const addRule = (raw: string): void => {
-    const sep = raw.search(/[=:]/);
-    if (sep === -1) return;
-    const key = raw.slice(0, sep).trim().toLowerCase();
-    const color = raw.slice(sep + 1).trim();
-    if (key && color) map[key] = color;
-  };
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (typeof item === "string") addRule(item);
-    }
-  } else if (typeof value === "string") {
-    for (const line of value.split(/[\n,]/)) addRule(line);
-  } else if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof v === "string" && v.trim()) {
-        map[k.trim().toLowerCase()] = v.trim();
-      }
-    }
-  }
-
-  return map;
-}
-
-/**
  * Coerce a config value to a "YYYY-MM-DD" string. Obsidian's YAML parses an
  * unquoted date like `2026-07-04` into a Date object, so handle both that and
  * plain/ISO strings; anything else becomes "".
@@ -88,7 +55,9 @@ export class CalendarView extends BasesView {
   private weekStartDay: number = 1;
   private displayMode: CalendarDisplayMode = "block";
   private colorProp: BasesPropertyId | null = null;
-  private colorByProp: BasesPropertyId | null = null;
+  // Value→color is now global (plugin settings): a frontmatter property name
+  // plus a value→color map.
+  private colorByProp: string = "";
   private colorMap: Record<string, string> = {};
   private showThumbnail: boolean = false;
   private imageProp: BasesPropertyId | null = null;
@@ -170,8 +139,13 @@ export class CalendarView extends BasesView {
     this.displayMode = displayModeValue === "dot" ? "dot" : "block";
 
     this.colorProp = this.config.getAsPropertyId("colorProperty");
-    this.colorByProp = this.config.getAsPropertyId("colorByProperty");
-    this.colorMap = parseColorRules(this.config.get("colorRules"));
+    // Value→color rules come from global plugin settings (vault-wide).
+    this.colorByProp = this.plugin.settings.colorByProperty;
+    this.colorMap = Object.fromEntries(
+      this.plugin.settings.colorRules
+        .filter((r) => r.value.trim())
+        .map((r) => [r.value.trim().toLowerCase(), r.color]),
+    );
     this.showThumbnail = Boolean(this.config.get("showThumbnail"));
     this.imageProp = this.config.getAsPropertyId("imageProperty");
     this.titleRegex = (this.config.get("titleRegex") as string) || "";
@@ -418,7 +392,25 @@ export class CalendarView extends BasesView {
         ],
       },
       {
-        displayName: "Calendar options",
+        displayName: "Window (optional)",
+        type: "group",
+        items: [
+          {
+            displayName: "Window start (YYYY-MM-DD)",
+            type: "text",
+            key: "windowStart",
+            placeholder: "e.g. 2026-08-01",
+          },
+          {
+            displayName: "Window end (YYYY-MM-DD)",
+            type: "text",
+            key: "windowEnd",
+            placeholder: "e.g. 2026-09-30",
+          },
+        ],
+      },
+      {
+        displayName: "Layout",
         type: "group",
         items: [
           {
@@ -438,24 +430,6 @@ export class CalendarView extends BasesView {
             },
           },
           {
-            displayName: "Window start (YYYY-MM-DD)",
-            type: "text",
-            key: "windowStart",
-            placeholder: "e.g. 2026-08-01",
-          },
-          {
-            displayName: "Window end (YYYY-MM-DD)",
-            type: "text",
-            key: "windowEnd",
-            placeholder: "e.g. 2026-09-30",
-          },
-        ],
-      },
-      {
-        displayName: "Display",
-        type: "group",
-        items: [
-          {
             displayName: "Display mode",
             type: "dropdown",
             key: "displayMode",
@@ -467,21 +441,22 @@ export class CalendarView extends BasesView {
             },
           },
           {
-            displayName: "Color property",
-            type: "property",
-            key: "colorProperty",
-            placeholder: "Property",
+            displayName: "Max events per day",
+            type: "text",
+            key: "maxEventsPerDay",
+            placeholder: "unlimited",
           },
+        ],
+      },
+      {
+        displayName: "Content & color",
+        type: "group",
+        items: [
           {
-            displayName: "Color by property",
-            type: "property",
-            key: "colorByProperty",
-            placeholder: "Property",
-          },
-          {
-            displayName: "Color rules (value=color)",
-            type: "multitext",
-            key: "colorRules",
+            displayName: "Remove from title (regex)",
+            type: "text",
+            key: "titleRegex",
+            placeholder: "^\\d{4}-\\d{2}-\\d{2}\\s*",
           },
           {
             displayName: "Show image thumbnail",
@@ -490,22 +465,16 @@ export class CalendarView extends BasesView {
             default: false,
           },
           {
-            displayName: "Remove from title (regex)",
-            type: "text",
-            key: "titleRegex",
-            placeholder: "^\\d{4}-\\d{2}-\\d{2}\\s*",
-          },
-          {
             displayName: "Image property (optional)",
             type: "property",
             key: "imageProperty",
             placeholder: "Property",
           },
           {
-            displayName: "Max events per day",
-            type: "text",
-            key: "maxEventsPerDay",
-            placeholder: "unlimited",
+            displayName: "Color property (override)",
+            type: "property",
+            key: "colorProperty",
+            placeholder: "Property",
           },
         ],
       },
