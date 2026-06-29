@@ -8,7 +8,7 @@ body {
   --fc-highlight-color: var(--background-modifier-hover);
 }
 
-.bases-calendar-empty {
+.cbfork-empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -27,13 +27,13 @@ body {
  *
  * The preflight uses `:where()` for element selectors so they contribute
  * 0 specificity — this means the calendar appearance styles declared later
- * (in `.bases-calendar-container`) automatically win by source order without
+ * (in `.cbfork-container`) automatically win by source order without
  * needing a separate re-application layer.
  *
  * Every override includes a comment explaining *which* upstream rule it
  * counters and *why* the override is needed.
  * ──────────────────────────────────────────────────────────────────────────── */
-.markdown-rendered .bases-calendar-container {
+.markdown-rendered .cbfork-container {
 
   /* ── table ──────────────────────────────────────────────────────────────
    * `.markdown-rendered table` adds block margins that shift the calendar.
@@ -100,7 +100,7 @@ body {
 
   /* Note: scrollgrid section/border normalization that FullCalendar needs in
    * BOTH embedded and standalone contexts now lives in the shared
-   * `.bases-calendar-container` appearance block below (single source of truth).
+   * `.cbfork-container` appearance block below (single source of truth).
    */
 
   /* ── tbody ──────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ body {
  * embedded mode (where both blocks use !important and have comparable
  * specificity) these rules win by source order.
  * ──────────────────────────────────────────────────────────────────────────── */
-.bases-calendar-container {
+.cbfork-container {
   width: 100%;
 
   .fc {
@@ -334,10 +334,7 @@ body {
   }
 }
 
-.bases-calendar-event-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
+.cbfork-event-content {
   padding: 4px 6px;
   font-size: var(--font-ui-smaller);
   color: var(--text-normal);
@@ -345,63 +342,89 @@ body {
 }
 
 /* Holds the title + properties; min-width:0 lets the title ellipsize. */
-.bases-calendar-event-body {
-  flex: 1;
+.cbfork-event-body {
   min-width: 0;
 }
 
-.bases-calendar-event-title {
+.cbfork-event-title {
   font-weight: var(--font-semibold);
   margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.bases-calendar-event-properties {
+.cbfork-event-properties {
   display: flex;
   flex-direction: column;
 }
 
-.bases-calendar-event-property {
+.cbfork-event-property {
   display: flex;
   flex-direction: column;
   padding: 2px 0px;
 }
 
-.bases-calendar-event-property-value {
+.cbfork-event-property-value {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ── thumbnail ──────────────────────────────────────────────────────────────
- * Compact square note preview shown to the left of the event content (block
- * mode) so it stays unobtrusive in dense month cells.
+/* ── thumbnail card ──────────────────────────────────────────────────────────
+ * When an event has a thumbnail, the image fills the event box and the text
+ * sits on a translucent band of the event's color at the bottom.
  */
-.bases-calendar-event-thumbnail {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  object-fit: cover;
+.cbfork-container .fc-event.cbfork-has-thumb {
+  /* Let the image (not the event color) fill the box. */
+  background: transparent !important;
+}
+.cbfork-container .fc-event.cbfork-has-thumb .fc-event-main {
+  padding: 0 !important;
+}
+
+.cbfork-event-card {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 56px;
   border-radius: 3px;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+}
+
+.cbfork-event-overlay {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: var(--font-ui-smaller);
+  /* Fallback when the event has no color; the inline color-mix overrides this. */
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.cbfork-event-overlay .cbfork-event-title,
+.cbfork-event-overlay .cbfork-event-property-value {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
 /* ── dot display mode ────────────────────────────────────────────────────────
  * Compact "dot + title" rows instead of full event blocks. FullCalendar renders
  * these as .fc-daygrid-dot-event when eventDisplay is "list-item".
  */
-.bases-calendar-container .fc-daygrid-dot-event {
+.cbfork-container .fc-daygrid-dot-event {
   background-color: transparent !important;
   padding: 1px 4px !important;
   margin-bottom: 2px !important;
 }
 
-.bases-calendar-container .fc-daygrid-dot-event .fc-daygrid-event-dot {
+.cbfork-container .fc-daygrid-dot-event .fc-daygrid-event-dot {
   /* Hide FullCalendar's built-in dot — we render our own colored one. */
   display: none !important;
 }
 
-.bases-calendar-event-dot-row {
+.cbfork-event-dot-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -411,7 +434,7 @@ body {
   color: var(--text-normal);
 }
 
-.bases-calendar-event-dot {
+.cbfork-event-dot {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
@@ -419,7 +442,7 @@ body {
   background-color: var(--cb-default-color, var(--interactive-accent));
 }
 
-.bases-calendar-event-dot-title {
+.cbfork-event-dot-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -427,11 +450,11 @@ body {
 
 /* Dot mode, multi-day event: a thin colored spanning bar (not a dot). Inherit
    the same 2px bottom margin as dot rows so a mixed day stacks evenly. */
-.bases-calendar-container .fc-event.cb-dot-bar {
+.cbfork-container .fc-event.cb-dot-bar {
   border-radius: 3px !important;
 }
 
-.bases-calendar-event-dot-bar {
+.cbfork-event-dot-bar {
   padding: 1px 6px;
   font-size: var(--font-ui-smaller);
   font-weight: 500;
@@ -445,33 +468,33 @@ body {
 /* ── "+N more" link and its popover ──────────────────────────────────────────
  * FullCalendar's defaults look light/un-themed in dark mode.
  */
-.bases-calendar-container .fc-daygrid-more-link {
+.cbfork-container .fc-daygrid-more-link {
   color: var(--text-muted) !important;
   font-size: var(--font-ui-smaller) !important;
   font-weight: 500 !important;
   padding: 1px 4px !important;
   border-radius: 3px !important;
 }
-.bases-calendar-container .fc-daygrid-more-link:hover {
+.cbfork-container .fc-daygrid-more-link:hover {
   color: var(--text-normal) !important;
   background-color: var(--background-modifier-hover) !important;
 }
 
-.bases-calendar-container .fc-popover {
+.cbfork-container .fc-popover {
   background-color: var(--background-primary) !important;
   border: 1px solid var(--background-modifier-border) !important;
   border-radius: 6px !important;
   box-shadow: var(--shadow-s) !important;
 }
-.bases-calendar-container .fc-popover-header {
+.cbfork-container .fc-popover-header {
   background-color: var(--background-secondary) !important;
   color: var(--text-normal) !important;
   padding: 6px 8px !important;
 }
-.bases-calendar-container .fc-popover-title {
+.cbfork-container .fc-popover-title {
   font-weight: 600 !important;
 }
-.bases-calendar-container .fc-popover-body {
+.cbfork-container .fc-popover-body {
   padding: 6px !important;
 }
 

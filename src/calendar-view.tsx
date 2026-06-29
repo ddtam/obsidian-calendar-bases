@@ -77,7 +77,7 @@ export class CalendarView extends BasesView {
     super(controller);
     this.scrollEl = scrollEl;
     this.containerEl = scrollEl.createDiv({
-      cls: "bases-calendar-container is-loading",
+      cls: "cbfork-container is-loading",
       attr: { tabIndex: 0 },
     });
   }
@@ -165,7 +165,7 @@ export class CalendarView extends BasesView {
       this.root?.unmount();
       this.root = null;
       this.containerEl.empty();
-      this.containerEl.createDiv("bases-calendar-empty").textContent =
+      this.containerEl.createDiv("cbfork-empty").textContent =
         "Configure a start date property to display entries";
       return;
     }

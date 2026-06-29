@@ -110,6 +110,24 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     center: "title",
     right: "prevYear,prev,today,next,nextYear",
   };
+
+  // When a fixed window is set, the grid is snapped to whole weeks, so
+  // FullCalendar's auto title shows the snapped range. Override it to show the
+  // actual clamped window dates instead.
+  const handleDatesSet = useCallback(() => {
+    if (!exactWindow) return;
+    // CalendarApi.el isn't in the public types but exists at runtime.
+    const api = calendarRef.current?.getApi() as unknown as {
+      el?: HTMLElement;
+    };
+    const titleEl = api?.el?.querySelector(".fc-toolbar-title");
+    if (titleEl) {
+      titleEl.textContent = formatWindowTitle(
+        exactWindow.start,
+        exactWindow.end,
+      );
+    }
+  }, [exactWindow]);
   // Shared hover parent so Page Preview can manage popover lifecycle —
   // when a new popover opens, the old one on the same parent is dismissed.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -382,7 +400,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         const isMultiDay = eventInfo.event.extendedProps.isMultiDay as boolean;
         if (isMultiDay) {
           return (
-            <div className="bases-calendar-event-dot-bar">
+            <div className="cbfork-event-dot-bar">
               {eventInfo.event.title}
             </div>
           );
@@ -391,12 +409,12 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
           | string
           | undefined;
         return (
-          <div className="bases-calendar-event-dot-row">
+          <div className="cbfork-event-dot-row">
             <span
-              className="bases-calendar-event-dot"
+              className="cbfork-event-dot"
               style={dotColor ? { backgroundColor: dotColor } : undefined}
             />
-            <span className="bases-calendar-event-dot-title">
+            <span className="cbfork-event-dot-title">
               {eventInfo.event.title}
             </span>
           </div>
@@ -428,17 +446,17 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       const body =
         validProperties.length > 0 ? (
           <>
-            <div className="bases-calendar-event-title">
+            <div className="cbfork-event-title">
               {renderProp(
                 validProperties[0].propertyId,
                 validProperties[0].value,
               )}
             </div>
             {validProperties.length > 1 && (
-              <div className="bases-calendar-event-properties">
+              <div className="cbfork-event-properties">
                 {validProperties.slice(1).map(({ propertyId: prop, value }) => (
-                  <div key={prop} className="bases-calendar-event-property">
-                    <span className="bases-calendar-event-property-value">
+                  <div key={prop} className="cbfork-event-property">
+                    <span className="cbfork-event-property-value">
                       {renderProp(prop, value)}
                     </span>
                   </div>
@@ -448,21 +466,41 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
           </>
         ) : (
           // Fallback to the (cleaned) event title if no properties
-          <div className="bases-calendar-event-title">
+          <div className="cbfork-event-title">
             {eventInfo.event.title}
           </div>
         );
 
+      // With a thumbnail, render an image card: the image fills the event box
+      // and the text sits on a translucent band of the event's color.
+      if (thumbnailUrl) {
+        const evColor = eventInfo.event.extendedProps.dotColor as
+          | string
+          | undefined;
+        return (
+          <div
+            className="cbfork-event-card"
+            style={{ backgroundImage: `url("${cssUrl(thumbnailUrl)}")` }}
+          >
+            <div
+              className="cbfork-event-overlay"
+              style={
+                evColor
+                  ? {
+                      background: `color-mix(in srgb, ${evColor} 80%, transparent)`,
+                    }
+                  : undefined
+              }
+            >
+              {body}
+            </div>
+          </div>
+        );
+      }
+
       return (
-        <div className="bases-calendar-event-content">
-          {thumbnailUrl && (
-            <img
-              className="bases-calendar-event-thumbnail"
-              src={thumbnailUrl}
-              alt=""
-            />
-          )}
-          <div className="bases-calendar-event-body">{body}</div>
+        <div className="cbfork-event-content">
+          <div className="cbfork-event-body">{body}</div>
         </div>
       );
     },
@@ -492,6 +530,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       navLinks={false}
       events={events}
       eventContent={renderEventContent}
+      datesSet={handleDatesSet}
       dayMaxEvents={maxEventsPerDay > 0 ? maxEventsPerDay : false}
       dayCellClassNames={(arg) => {
         if (!exactWindow) return [];
@@ -500,11 +539,16 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
           ? ["cb-out-of-window"]
           : [];
       }}
-      eventClassNames={(arg) =>
-        displayMode === "dot" && arg.event.extendedProps.isMultiDay
-          ? ["cb-dot-bar"]
-          : []
-      }
+      eventClassNames={(arg) => {
+        const cls: string[] = [];
+        if (displayMode === "dot" && arg.event.extendedProps.isMultiDay) {
+          cls.push("cb-dot-bar");
+        }
+        if (displayMode !== "dot" && arg.event.extendedProps.thumbnailUrl) {
+          cls.push("cbfork-has-thumb");
+        }
+        return cls;
+      }}
       eventClick={handleEventClick}
       eventMouseEnter={handleEventMouseEnter}
       eventDrop={(info) => void handleEventDrop(info)}
@@ -535,6 +579,24 @@ function tryGetValue(entry: BasesEntry, propId: BasesPropertyId): Value | null {
   } catch {
     return null;
   }
+}
+
+/** Escape a URL for safe use inside a CSS url("...") value. */
+function cssUrl(url: string): string {
+  return url.replace(/["\\]/g, (c) => "\\" + c);
+}
+
+/** Format a window range like FullCalendar's title, e.g. "Jul 4 – 12, 2026". */
+function formatWindowTitle(start: Date, end: Date): string {
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  const startStr = start.toLocaleDateString(undefined, opts);
+  const sameMonth =
+    start.getMonth() === end.getMonth() &&
+    start.getFullYear() === end.getFullYear();
+  const endStr = sameMonth
+    ? String(end.getDate())
+    : end.toLocaleDateString(undefined, opts);
+  return `${startStr} – ${endStr}, ${end.getFullYear()}`;
 }
 
 /** Parse a "YYYY-MM-DD" string to a local Date, or null if invalid. */
