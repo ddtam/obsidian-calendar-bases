@@ -1,57 +1,82 @@
-## Calendar Bases
+## Calendar Bases (Fork)
 
-<a href='https://ko-fi.com/W7W71T4JPP' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi5.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+A personal fork of [edrickleong/obsidian-calendar-bases](https://github.com/edrickleong/obsidian-calendar-bases)
+that adds a calendar layout to [Obsidian Bases](https://help.obsidian.md/bases),
+with a number of workflow and aesthetic improvements. It installs alongside the
+original (it uses a distinct plugin id and Bases view type), so you can run
+either.
 
 ![](./screenshot.png)
 
-Adds a calendar layout to [Obsidian Bases](https://help.obsidian.md/bases) so you can display notes with dates in an interactive calendar view.
+Built on [FullCalendar](https://github.com/fullcalendar/fullcalendar).
 
-Built with [FullCalendar](https://github.com/fullcalendar/fullcalendar) for a robust and feature-rich calendar experience.
+### Core (from upstream)
 
-- Dynamically display entries that match your filters on their respective dates.
-- Drag and drop events to reschedule them - automatically updates note frontmatter.
-- Navigate between months with intuitive controls.
-- Support for single-day and multi-day events (with optional end dates).
-- Click entries to open them or use context menus for more options.
+- Dynamically display entries that match your filters on their dates.
+- Drag-and-drop to reschedule — updates the note frontmatter automatically.
+- Single-day and multi-day events (with an optional end date).
+- Click entries to open them, or use the context menu for more options.
+
+### What this fork adds
+
+- **Lands on the most relevant month** when opened — the soonest upcoming event,
+  else the most recent past event — instead of always jumping to today.
+- **Faster navigation** — prev/next **year** buttons and a **Month / Week** toggle.
+- **Fixed window** — pin the view to a date range (`windowStart`/`windowEnd`);
+  days outside the window are faded.
+- **Display modes** — full **blocks** or compact **dots**; multi-day events show
+  as a thin spanning bar in dot mode.
+- **Rich coloring**, in precedence order: an explicit per-note `color`
+  (right-click → **Set color**), a per-base color property, vault-wide
+  **value→color rules**, **color from a linked category note** (e.g.
+  `type: "[[restaurant]]"` → `restaurant.md`'s `color`), and a configurable
+  **default color** (theme accent by default).
+- **Image thumbnails** from a property or the note's first embed.
+- **Title cleanup** — a per-base regex to strip text (e.g. a leading date) from
+  event titles.
+- **Density control** — a per-day **max events** cap with a themed "+N more"
+  popover.
+- **Settings tab** — global defaults for color, display mode, and week start, an
+  editable color palette, and the linked-note / value→color configuration.
 
 ## Installation
 
-This plugin requires Obsidian v1.10.0 or later to work.
+Requires Obsidian v1.10.0 or later.
 
-### Install via Community Plugins
+### Via BRAT
 
-Calendar Bases is available under Community Plugins. It can be found [here](obsidian://show-plugin?id=calendar-bases).
+1. Install the [BRAT plugin](obsidian://show-plugin?id=obsidian42-brat).
+2. In BRAT settings choose "Add beta plugin" and enter this repository's URL:
+   `https://github.com/ddtam/obsidian-calendar-bases`.
+3. Pick the latest version and add the plugin.
 
-### Install via BRAT
+### Manual
 
-1. Install the [BRAT plugin](obsidian://show-plugin?id=obsidian42-brat) under Community Plugins.
-2. Open BRAT settings and click "Add beta plugin".
-3. Enter the URL of this repository: `https://github.com/edrickleong/obsidian-calendar-bases`.
-4. Under "Select a version", choose the Latest version.
-5. Click "Add plugin".
-
+Copy `main.js`, `manifest.json`, and `styles.css` from a release into
+`<vault>/.obsidian/plugins/calendar-bases-fork/`, then enable the plugin.
 
 ## Documentation
 
-### Date Properties
+### Date properties
 
-To display entries on the calendar, configure a start date property in the view configuration menu. The property must contain a valid date string.
+Configure a **start date** property in the view options; it must contain a valid
+date string. Add an optional **end date** for multi-day events.
 
 ```yaml
-# Date property examples
 startDate: 2025-10-15
 startDate: 2025-10-15T10:00:00
-
-# Optional end date for multi-day events
 endDate: 2025-10-18
 ```
 
-Any JavaScript-parseable date format is supported. For multi-day events, configure both a start date and an optional end date property.
+Any JavaScript-parseable date format is supported.
 
 ## Credits
 
-This plugin uses [FullCalendar](https://github.com/fullcalendar/fullcalendar).
+- Original plugin by [Edrick Leong](https://github.com/edrickleong/obsidian-calendar-bases)
+  — please support the upstream author:
+  <a href='https://ko-fi.com/W7W71T4JPP' target='_blank'>Buy them a coffee</a>.
+- Calendar rendering by [FullCalendar](https://github.com/fullcalendar/fullcalendar).
 
 ## License
 
-This project is licensed under the MIT License.
+MIT.
