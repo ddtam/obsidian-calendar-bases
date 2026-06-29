@@ -112,22 +112,13 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   };
 
   // When a fixed window is set, the grid is snapped to whole weeks, so
-  // FullCalendar's auto title shows the snapped range. Override it to show the
-  // actual clamped window dates instead.
-  const handleDatesSet = useCallback(() => {
-    if (!exactWindow) return;
-    // CalendarApi.el isn't in the public types but exists at runtime.
-    const api = calendarRef.current?.getApi() as unknown as {
-      el?: HTMLElement;
-    };
-    const titleEl = api?.el?.querySelector(".fc-toolbar-title");
-    if (titleEl) {
-      titleEl.textContent = formatWindowTitle(
-        exactWindow.start,
-        exactWindow.end,
-      );
-    }
-  }, [exactWindow]);
+  // FullCalendar's auto title would show the snapped range. Override the title
+  // formatter to show the actual clamped window dates instead. (Done via
+  // titleFormat rather than mutating the DOM, which fights FullCalendar's own
+  // render and duplicates the title.)
+  const titleFormat = exactWindow
+    ? () => formatWindowTitle(exactWindow.start, exactWindow.end)
+    : undefined;
   // Shared hover parent so Page Preview can manage popover lifecycle —
   // when a new popover opens, the old one on the same parent is dismissed.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -522,6 +513,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       visibleRange={windowRange ?? undefined}
       firstDay={weekStartDay}
       headerToolbar={headerToolbar}
+      titleFormat={titleFormat}
       buttonText={{
         today: "Today",
         month: "Month",
@@ -530,7 +522,6 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       navLinks={false}
       events={events}
       eventContent={renderEventContent}
-      datesSet={handleDatesSet}
       dayMaxEvents={maxEventsPerDay > 0 ? maxEventsPerDay : false}
       dayCellClassNames={(arg) => {
         if (!exactWindow) return [];
