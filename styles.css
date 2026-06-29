@@ -384,6 +384,25 @@ body {
   text-overflow: ellipsis;
 }
 
+/* ── event icon (emoji or Lucide) ──────────────────────────────────────────── */
+.cbfork-event-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 4px;
+  line-height: 1;
+}
+.cbfork-event-icon svg {
+  width: 13px;
+  height: 13px;
+}
+/* In a dot row the flex gap already spaces the icon from the title. */
+.cbfork-event-dot-row .cbfork-event-icon {
+  margin-right: 0;
+}
+
 .cbfork-event-properties {
   display: flex;
   flex-direction: column;
@@ -549,5 +568,43 @@ body {
 
 .cb-color-swatch:hover {
   transform: scale(1.1);
+}
+
+/* ── icon picker modal ──────────────────────────────────────────────────────── */
+.cb-icon-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0 0 8px;
+}
+.cb-icon-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  font-size: 28px;
+  margin: 4px 0;
+}
+.cb-icon-preview svg {
+  width: 28px;
+  height: 28px;
+}
+.cb-icon-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.cb-icon-swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  border-radius: var(--button-radius, 5px);
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  box-shadow: none;
+}
+.cb-icon-swatch:hover {
+  background-color: var(--background-modifier-hover);
 }
 

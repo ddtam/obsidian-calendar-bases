@@ -22,6 +22,8 @@ export interface CalendarBasesSettings {
   defaultDisplayMode: "block" | "dot";
   /** Default week start (day name) for views that don't set their own. */
   defaultWeekStart: string;
+  /** In dot mode, an event's icon replaces the colored dot. */
+  iconReplacesDot: boolean;
 }
 
 export const DEFAULT_PALETTE: string[] = [
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS: CalendarBasesSettings = {
   palette: [...DEFAULT_PALETTE],
   defaultDisplayMode: "block",
   defaultWeekStart: "sunday",
+  iconReplacesDot: true,
 };
 
 /** Resolve the current theme accent color to a hex string for the color picker. */
@@ -108,6 +111,20 @@ export class CalendarBasesSettingTab extends PluginSettingTab {
             this.plugin.settings.defaultWeekStart = value;
             await this.plugin.saveSettings();
           });
+      });
+
+    new Setting(containerEl)
+      .setName("Icon replaces the dot")
+      .setDesc(
+        "In dot mode, an event's icon (from its Icon property) replaces the colored dot. Turn off to keep the dot and show the icon before the title.",
+      )
+      .addToggle((t) => {
+        t.setValue(this.plugin.settings.iconReplacesDot).onChange(
+          async (value) => {
+            this.plugin.settings.iconReplacesDot = value;
+            await this.plugin.saveSettings();
+          },
+        );
       });
 
     new Setting(containerEl).setName("Colors").setHeading();

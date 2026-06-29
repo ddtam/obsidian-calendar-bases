@@ -17,6 +17,7 @@ import {
 } from "./CalendarReactView";
 import { AppContext } from "./context";
 import { ColorPickerModal } from "./color-modal";
+import { IconPickerModal } from "./icon-modal";
 import type ObsidianCalendarPlugin from "./main";
 
 // Register the same view type as the original plugin so this is a drop-in
@@ -64,6 +65,8 @@ export class CalendarView extends BasesView {
   private colorMap: Record<string, string> = {};
   private showThumbnail: boolean = false;
   private imageProp: BasesPropertyId | null = null;
+  private iconProp: BasesPropertyId | null = null;
+  private iconReplacesDot: boolean = true;
   private titleRegex: string = "";
   private maxEventsPerDay: number = 0;
   private windowStart: string = "";
@@ -151,6 +154,8 @@ export class CalendarView extends BasesView {
     );
     this.showThumbnail = Boolean(this.config.get("showThumbnail"));
     this.imageProp = this.config.getAsPropertyId("imageProperty");
+    this.iconProp = this.config.getAsPropertyId("iconProperty");
+    this.iconReplacesDot = this.plugin.settings.iconReplacesDot;
     this.titleRegex = (this.config.get("titleRegex") as string) || "";
     this.maxEventsPerDay =
       parseInt(this.config.get("maxEventsPerDay") as string, 10) || 0;
@@ -220,6 +225,8 @@ export class CalendarView extends BasesView {
             linkedColorProperty={this.linkedColorProperty}
             showThumbnail={this.showThumbnail}
             imageProperty={this.imageProp}
+            iconProperty={this.iconProp}
+            iconReplacesDot={this.iconReplacesDot}
             titleRegex={this.titleRegex}
             maxEventsPerDay={this.maxEventsPerDay}
             windowStart={this.windowStart}
@@ -303,6 +310,20 @@ export class CalendarView extends BasesView {
 
     menu.addItem((item) =>
       item
+        .setSection("action")
+        .setTitle("Set icon…")
+        .setIcon("lucide-smile")
+        .onClick(() => {
+          const current =
+            this.app.metadataCache.getCache(file.path)?.frontmatter?.icon ?? "";
+          new IconPickerModal(this.app, String(current), (icon) => {
+            void this.setEntryIcon(entry, icon);
+          }).open();
+        }),
+    );
+
+    menu.addItem((item) =>
+      item
         .setSection("danger")
         .setTitle("Delete file")
         .setIcon("lucide-trash-2")
@@ -320,6 +341,19 @@ export class CalendarView extends BasesView {
         frontmatter.color = color;
       } else {
         delete frontmatter.color;
+      }
+    });
+  }
+
+  private async setEntryIcon(
+    entry: BasesEntry,
+    icon: string | null,
+  ): Promise<void> {
+    await this.app.fileManager.processFrontMatter(entry.file, (frontmatter) => {
+      if (icon) {
+        frontmatter.icon = icon;
+      } else {
+        delete frontmatter.icon;
       }
     });
   }
@@ -477,6 +511,12 @@ export class CalendarView extends BasesView {
             displayName: "Color property (override)",
             type: "property",
             key: "colorProperty",
+            placeholder: "Property",
+          },
+          {
+            displayName: "Icon property (emoji or Lucide name)",
+            type: "property",
+            key: "iconProperty",
             placeholder: "Property",
           },
         ],

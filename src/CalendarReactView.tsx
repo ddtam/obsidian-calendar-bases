@@ -7,7 +7,14 @@ import type {
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
-import { App, BasesEntry, BasesPropertyId, DateValue, Value } from "obsidian";
+import {
+  App,
+  BasesEntry,
+  BasesPropertyId,
+  DateValue,
+  setIcon,
+  Value,
+} from "obsidian";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useApp } from "./hooks";
@@ -30,6 +37,8 @@ interface CalendarReactViewProps {
   linkedColorProperty: string;
   showThumbnail: boolean;
   imageProperty: BasesPropertyId | null;
+  iconProperty: BasesPropertyId | null;
+  iconReplacesDot: boolean;
   titleRegex: string;
   maxEventsPerDay: number;
   windowStart: string;
@@ -45,6 +54,41 @@ interface CalendarReactViewProps {
   calendarHandleRef?: React.RefObject<CalendarHandle | null>;
 }
 
+const LUCIDE_NAME_RE = /^[a-z0-9-]+$/;
+
+/**
+ * Render an event icon: a Lucide icon name (e.g. "utensils") via setIcon,
+ * otherwise the raw value as text (emoji/symbol). Lucide icons can be tinted
+ * via `color` (they use currentColor); emoji keep their own color.
+ */
+const EventIcon: React.FC<{ value: string; color?: string }> = ({
+  value,
+  color,
+}) => {
+  const isLucide = LUCIDE_NAME_RE.test(value);
+  const ref = useCallback(
+    (el: HTMLSpanElement | null) => {
+      if (!el) return;
+      el.textContent = "";
+      if (isLucide) {
+        setIcon(el, value);
+        // Fall back to showing the raw text if it isn't a real Lucide icon.
+        if (!el.firstElementChild) el.textContent = value;
+      } else {
+        el.textContent = value;
+      }
+    },
+    [value, isLucide],
+  );
+  return (
+    <span
+      className="cbfork-event-icon"
+      style={isLucide && color ? { color } : undefined}
+      ref={ref}
+    />
+  );
+};
+
 export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   entries,
   weekStartDay,
@@ -57,6 +101,8 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   linkedColorProperty,
   showThumbnail,
   imageProperty,
+  iconProperty,
+  iconReplacesDot,
   titleRegex,
   maxEventsPerDay,
   windowStart,
@@ -178,6 +224,9 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       showThumbnail && app
         ? resolveThumbnailUrl(app, calEntry.entry, imageProperty)
         : undefined;
+    const icon = app
+      ? resolveIcon(app, calEntry.entry, iconProperty)
+      : undefined;
 
     const isMultiDay = adjustedEndDate !== undefined;
 
@@ -204,6 +253,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         originalEndDate: calEntry.endDate, // Keep track of original end date for drag operations
         dotColor: color,
         thumbnailUrl,
+        icon,
         isMultiDay,
       },
     };
@@ -383,6 +433,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       if (!app) return null;
 
       const entry = eventInfo.event.extendedProps.entry as BasesEntry;
+      const icon = eventInfo.event.extendedProps.icon as string | undefined;
 
       // Compact dot display — single-day events show a colored dot + title;
       // multi-day events render as a thin spanning bar (just the title) so they
@@ -392,6 +443,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         if (isMultiDay) {
           return (
             <div className="cbfork-event-dot-bar">
+              {icon && <EventIcon value={icon} />}
               {eventInfo.event.title}
             </div>
           );
@@ -401,10 +453,15 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
           | undefined;
         return (
           <div className="cbfork-event-dot-row">
-            <span
-              className="cbfork-event-dot"
-              style={dotColor ? { backgroundColor: dotColor } : undefined}
-            />
+            {icon && iconReplacesDot ? (
+              <EventIcon value={icon} color={dotColor} />
+            ) : (
+              <span
+                className="cbfork-event-dot"
+                style={dotColor ? { backgroundColor: dotColor } : undefined}
+              />
+            )}
+            {icon && !iconReplacesDot && <EventIcon value={icon} />}
             <span className="cbfork-event-dot-title">
               {eventInfo.event.title}
             </span>
@@ -438,6 +495,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         validProperties.length > 0 ? (
           <>
             <div className="cbfork-event-title">
+              {icon && <EventIcon value={icon} />}
               {renderProp(
                 validProperties[0].propertyId,
                 validProperties[0].value,
@@ -458,6 +516,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         ) : (
           // Fallback to the (cleaned) event title if no properties
           <div className="cbfork-event-title">
+            {icon && <EventIcon value={icon} />}
             {eventInfo.event.title}
           </div>
         );
@@ -495,7 +554,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         </div>
       );
     },
-    [properties, app, hasNonEmptyValue, displayMode],
+    [properties, app, hasNonEmptyValue, displayMode, iconReplacesDot],
   );
 
   return (
@@ -742,6 +801,30 @@ function resolveLinkedColor(
   return typeof targetColor === "string" && targetColor.trim()
     ? targetColor.trim()
     : undefined;
+}
+
+/**
+ * Resolve an event icon: an explicit `icon` frontmatter value (what right-click
+ * → Set icon writes) takes precedence, then the configured icon property.
+ */
+function resolveIcon(
+  app: App,
+  entry: BasesEntry,
+  iconProperty: BasesPropertyId | null,
+): string | undefined {
+  const explicit = app.metadataCache.getCache(entry.file.path)?.frontmatter
+    ?.icon;
+  if (typeof explicit === "string" && explicit.trim()) {
+    return explicit.trim();
+  }
+  if (iconProperty) {
+    const value = tryGetValue(entry, iconProperty);
+    if (value && value.isTruthy()) {
+      const str = value.toString().trim();
+      if (str.length > 0) return str;
+    }
+  }
+  return undefined;
 }
 
 /**
