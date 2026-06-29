@@ -1,6 +1,6 @@
 {
 	"name": "calendar-bases-fork",
-	"version": "0.3.3",
+	"version": "0.3.4",
 	"description": "Adds a calendar layout to Obsidian Bases (personal fork).",
 	"main": "main.js",
 	"scripts": {

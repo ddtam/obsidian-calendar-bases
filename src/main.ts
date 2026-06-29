@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, QueryController } from "obsidian";
 import { CalendarView, CalendarViewType } from "./calendar-view";
 import {
   CalendarBasesSettings,
@@ -21,12 +21,20 @@ export default class ObsidianCalendarPlugin extends Plugin {
       defaultMod: false,
     };
 
-    this.registerBasesView(CalendarViewType, {
+    const viewConfig = {
       name: "Calendar",
       icon: "lucide-calendar",
-      factory: (controller, containerEl) =>
+      factory: (controller: QueryController, containerEl: HTMLElement) =>
         new CalendarView(controller, containerEl, this),
       options: () => CalendarView.getViewOptions(),
+    };
+    // Primary: the same view type as the original plugin (drop-in).
+    this.registerBasesView(CalendarViewType, viewConfig);
+    // Backward-compat alias so bases still on the old `calendar-fork` type (or
+    // restored to it by sync) keep rendering instead of erroring.
+    this.registerBasesView("calendar-fork", {
+      ...viewConfig,
+      name: "Calendar (legacy type)",
     });
 
     this.addSettingTab(new CalendarBasesSettingTab(this.app, this));
