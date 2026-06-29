@@ -21,19 +21,25 @@ body {
  * Calendar view — embedded preflight
  *
  * When the calendar is embedded inside a markdown note the FullCalendar
- * `<table>` sits inside `.markdown-rendered`, so Obsidian's generic table
- * styles (and community-theme table styles) leak in and break the calendar
- * layout.
+ * `<table>` sits inside the note's rendered content, so Obsidian's generic
+ * table styles (and community-theme table styles) leak in and break the
+ * calendar layout.
+ *
+ * Both contexts must be covered:
+ *  - `.markdown-rendered` — reading mode and inline ```base blocks.
+ *  - `.markdown-source-view` — live preview, where a FILE embed
+ *    (`![[x.base#view]]`) renders under `.bases-embed` with NO
+ *    `.markdown-rendered` ancestor. Without this the leaked table styles win
+ *    and the grid loses its borders (light bands at the header/footer).
  *
  * The preflight uses `:where()` for element selectors so they contribute
  * 0 specificity — this means the calendar appearance styles declared later
  * (in `.cbfork-container`) automatically win by source order without
- * needing a separate re-application layer.
- *
- * Every override includes a comment explaining *which* upstream rule it
- * counters and *why* the override is needed.
+ * needing a separate re-application layer. The grid border normalization is
+ * re-asserted here (not just in the shared block) so it out-specificities the
+ * leaked table borders in embedded contexts.
  * ──────────────────────────────────────────────────────────────────────────── */
-.markdown-rendered .cbfork-container {
+:is(.markdown-rendered, .markdown-source-view) .cbfork-container {
 
   /* ── table ──────────────────────────────────────────────────────────────
    * `.markdown-rendered table` adds block margins that shift the calendar.
@@ -98,10 +104,35 @@ body {
     font-weight: inherit !important;
   }
 
-  /* Note: scrollgrid section/border normalization that FullCalendar needs in
-   * BOTH embedded and standalone contexts now lives in the shared
-   * `.cbfork-container` appearance block below (single source of truth).
+  /* ── grid borders (embedded) ────────────────────────────────────────────
+   * Re-assert the grid border normalization here. The shared `.cbfork-container`
+   * block below also sets these for the standalone base view, but in embedded
+   * contexts the leaked theme table borders out-specificity that block — this
+   * higher-specificity copy wins. Without it, file embeds in live preview lose
+   * their grid lines and show light bands at the header/footer.
    */
+  .fc-theme-standard td,
+  .fc-theme-standard th {
+    border-width: 1px !important;
+    border-color: var(--background-modifier-border) !important;
+  }
+  .fc .fc-scrollgrid-section > * {
+    border-left-width: 0 !important;
+    border-top-width: 0 !important;
+    border-right-width: 0 !important;
+  }
+  .fc .fc-scrollgrid-section-header > * {
+    border-bottom-width: 0 !important;
+  }
+  .fc .fc-scrollgrid-section:not(.fc-scrollgrid-section-header) > * {
+    border-bottom-width: 0 !important;
+  }
+  .fc-theme-standard .fc-scrollgrid {
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: var(--background-modifier-border) !important;
+    border-collapse: separate !important;
+  }
 
   /* ── tbody ──────────────────────────────────────────────────────────────
    * Some themes (Baseline, Cupertino) set a background-color on
