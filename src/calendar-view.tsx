@@ -19,7 +19,10 @@ import { AppContext } from "./context";
 import { ColorPickerModal } from "./color-modal";
 import type ObsidianCalendarPlugin from "./main";
 
-export const CalendarViewType = "calendar-fork";
+// Register the same view type as the original plugin so this is a drop-in
+// replacement: existing `type: calendar` bases render with no changes. (The two
+// plugins must not be installed at the same time — this fully replaces it.)
+export const CalendarViewType = "calendar";
 
 interface CalendarEntry {
   entry: BasesEntry;
