@@ -213,6 +213,7 @@ export class CalendarView extends BasesView {
             imageProperty={this.imageProp}
             iconProperty={this.iconProp}
             iconReplacesDot={this.iconReplacesDot}
+            currentFilePath={this.hostFilePath()}
             titleRegex={this.titleRegex}
             maxEventsPerDay={this.maxEventsPerDay}
             windowStart={this.windowStart}
@@ -237,6 +238,26 @@ export class CalendarView extends BasesView {
         </AppContext.Provider>
       </StrictMode>,
     );
+  }
+
+  /**
+   * The note this calendar is embedded in, so we can highlight the event whose
+   * note hosts the embed ("you are here"). It's the file of the workspace leaf
+   * whose container holds our scroll element. A standalone `.base` view returns
+   * its own base file, which won't match any event — so nothing highlights.
+   */
+  private hostFilePath(): string | null {
+    let result: string | null = null;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (result) return;
+      const containerEl = (leaf as { containerEl?: HTMLElement }).containerEl;
+      if (containerEl?.contains(this.scrollEl)) {
+        const file = (leaf.view as { file?: { path?: string } } | undefined)
+          ?.file;
+        if (file?.path) result = file.path;
+      }
+    });
+    return result;
   }
 
   private isEditable(): boolean {

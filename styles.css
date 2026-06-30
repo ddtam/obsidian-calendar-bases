@@ -173,6 +173,25 @@ body {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * Calendar view — embedded full width
+ *
+ * When embedded, the Bases scroll container (`.bases-view`) reserves a ~12px
+ * vertical scrollbar gutter even though the calendar fits with no overflow,
+ * leaving the calendar ~½cm narrower than the text column / a table embed. The
+ * embedded calendar renders at its natural height (FullCalendar scrolls
+ * internally, not here), so we can drop the outer scroll and reclaim the width.
+ * Scoped to embeds and to `.bases-view` that actually holds a calendar so other
+ * Bases views (table/map) and the standalone calendar view are untouched.
+ * ──────────────────────────────────────────────────────────────────────────── */
+:is(.markdown-rendered, .markdown-source-view)
+  .bases-view:has(.cbfork-container) {
+  /* `scrollbar-gutter: stable` (set by Bases) reserves the ~12px even with no
+   * overflow; clear it and the scroll so the calendar fills the column. */
+  overflow: hidden !important;
+  scrollbar-gutter: auto !important;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
  * Calendar view — appearance (single source of truth)
  *
  * These styles define how the calendar looks in BOTH standalone and embedded
@@ -430,6 +449,17 @@ body {
 }
 .cbfork-container .fc-event.cbfork-has-thumb .fc-event-main {
   padding: 0 !important;
+}
+
+/* ── current event ──────────────────────────────────────────────────────────
+ * The event whose note hosts this embedded calendar ("you are here"): an accent
+ * ring + soft glow so it stands out in block, dot, bar, and thumbnail display. */
+.cbfork-container .fc-event.cbfork-event-current {
+  outline: 2px solid var(--interactive-accent) !important;
+  outline-offset: 1px;
+  border-radius: var(--radius-s);
+  box-shadow: 0 0 6px
+    color-mix(in srgb, var(--interactive-accent) 60%, transparent) !important;
 }
 
 .cbfork-event-card {

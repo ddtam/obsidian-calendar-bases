@@ -35,6 +35,7 @@ interface CalendarReactViewProps {
   imageProperty: BasesPropertyId | null;
   iconProperty: BasesPropertyId | null;
   iconReplacesDot: boolean;
+  currentFilePath: string | null;
   titleRegex: string;
   maxEventsPerDay: number;
   windowStart: string;
@@ -95,6 +96,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   imageProperty,
   iconProperty,
   iconReplacesDot,
+  currentFilePath,
   titleRegex,
   maxEventsPerDay,
   windowStart,
@@ -237,6 +239,8 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         thumbnailUrl,
         icon,
         isMultiDay,
+        isCurrent:
+          !!currentFilePath && calEntry.entry.file.path === currentFilePath,
       },
     };
   });
@@ -578,6 +582,9 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         }
         if (displayMode !== "dot" && arg.event.extendedProps.thumbnailUrl) {
           cls.push("cbfork-has-thumb");
+        }
+        if (arg.event.extendedProps.isCurrent) {
+          cls.push("cbfork-event-current");
         }
         return cls;
       }}

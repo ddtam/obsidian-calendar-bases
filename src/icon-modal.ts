@@ -1,9 +1,11 @@
 import { App, getIconIds, Modal, setIcon } from "obsidian";
+import { EMOJI } from "./emoji-data";
 import type ObsidianCalendarPlugin from "./main";
 
 const LUCIDE_NAME_RE = /^[a-z0-9-]+$/;
 const MAX_RECENTS = 24;
-const MAX_RESULTS = 60;
+const MAX_RESULTS = 90;
+const MAX_EMOJI = 48;
 
 /** Render an icon value into an element: Lucide name via setIcon, else text. */
 function renderIconInto(el: HTMLElement, value: string): void {
@@ -55,7 +57,7 @@ export class IconPickerModal extends Modal {
     contentEl.createEl("h3", { text: "Set event icon" });
     contentEl.createEl("p", {
       cls: "cb-icon-hint",
-      text: "Search Lucide icons by name, or type/paste an emoji and press Enter. Recently used shown below.",
+      text: "Search emojis and Lucide icons by keyword (e.g. 'food'), or type/paste an emoji and press Enter. Recently used shown below.",
     });
 
     const preview = contentEl.createDiv({ cls: "cb-icon-preview" });
@@ -83,15 +85,23 @@ export class IconPickerModal extends Modal {
           return;
         }
       } else {
-        // Prefix matches first, then substring matches.
+        // Emoji matches (by name + keywords) first, then Lucide icons (prefix
+        // matches before substring matches).
+        const emoji: string[] = [];
+        for (const e of EMOJI) {
+          if (e.t.includes(q)) {
+            emoji.push(e.c);
+            if (emoji.length >= MAX_EMOJI) break;
+          }
+        }
         const names = lucideNames();
         const prefix = names.filter((n) => n.startsWith(q));
         const sub = names.filter((n) => !n.startsWith(q) && n.includes(q));
-        items = [...prefix, ...sub].slice(0, MAX_RESULTS);
+        items = [...emoji, ...prefix, ...sub].slice(0, MAX_RESULTS);
         if (!items.length) {
           grid.createEl("div", {
             cls: "cb-icon-empty",
-            text: "No matching Lucide icons. Type/paste an emoji and press Enter.",
+            text: "No matches. Type/paste an emoji and press Enter to use it.",
           });
           return;
         }
