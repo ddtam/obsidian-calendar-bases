@@ -31,10 +31,6 @@ interface CalendarReactViewProps {
   properties: BasesPropertyId[];
   displayMode: CalendarDisplayMode;
   colorProperty: BasesPropertyId | null;
-  colorByProperty: string;
-  colorMap: Record<string, string>;
-  categoryProperty: string;
-  linkedColorProperty: string;
   showThumbnail: boolean;
   imageProperty: BasesPropertyId | null;
   iconProperty: BasesPropertyId | null;
@@ -95,10 +91,6 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   properties,
   displayMode,
   colorProperty,
-  colorByProperty,
-  colorMap,
-  categoryProperty,
-  linkedColorProperty,
   showThumbnail,
   imageProperty,
   iconProperty,
@@ -211,22 +203,12 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       }
     }
 
-    const color = app
-      ? extractColor(app, calEntry.entry, {
-          colorProperty,
-          colorByProperty,
-          colorMap,
-          categoryProperty,
-          linkedColorProperty,
-        })
-      : undefined;
+    const color = extractColor(calEntry.entry, colorProperty);
     const thumbnailUrl =
       showThumbnail && app
         ? resolveThumbnailUrl(app, calEntry.entry, imageProperty)
         : undefined;
-    const icon = app
-      ? resolveIcon(app, calEntry.entry, iconProperty)
-      : undefined;
+    const icon = resolveIcon(calEntry.entry, iconProperty);
 
     const isMultiDay = adjustedEndDate !== undefined;
 
@@ -699,130 +681,46 @@ function computeRelevantDate(entries: CalendarEntry[]): Date {
   return soonestUpcoming ?? mostRecentPast ?? today;
 }
 
-interface ColorConfig {
-  colorProperty: BasesPropertyId | null;
-  colorByProperty: string;
-  colorMap: Record<string, string>;
-  categoryProperty: string;
-  linkedColorProperty: string;
-}
-
 /**
- * Resolve an event color, in order of precedence:
- *  1. An explicit `color` frontmatter value (what right-click → Set color writes).
- *  2. A literal color (hex or CSS name) read from `colorProperty`.
- *  3. A value→color rule: `colorByProperty` looked up in `colorMap` (e.g. type
- *     "meeting" → blue). Multi-value properties match the whole value, then any
- *     comma-separated token.
- *  4. A linked-note color: follow `categoryProperty`'s [[link]] and read the
- *     target note's `linkedColorProperty` (e.g. type: [[restaurant]] → orange).
- * Returns undefined when nothing matches (the CSS default/accent then applies).
+ * Resolve an event color from the configured color property. The property may
+ * be a literal frontmatter value (a hex/CSS color, e.g. set via right-click) or
+ * a Bases formula (e.g. one that pulls a color from a linked type note, like the
+ * map view's marker color) — both resolve through `entry.getValue`. Returns
+ * undefined when nothing is set (the CSS default/accent then applies).
  */
 function extractColor(
-  app: App,
   entry: BasesEntry,
-  cfg: ColorConfig,
+  colorProperty: BasesPropertyId | null,
 ): string | undefined {
-  // 1. Explicit per-note color frontmatter (set via right-click).
-  const explicit = app.metadataCache.getCache(entry.file.path)?.frontmatter
-    ?.color;
-  if (typeof explicit === "string" && explicit.trim()) {
-    return explicit.trim();
+  // Default to the `color` frontmatter field (right-click target) when no
+  // property is configured.
+  const propId = colorProperty ?? ("note.color" as BasesPropertyId);
+  const value = tryGetValue(entry, propId);
+  if (value && value.isTruthy()) {
+    const str = value.toString().trim();
+    if (str.length > 0) return str;
   }
-
-  // 2. Configured literal color property.
-  if (cfg.colorProperty) {
-    const value = tryGetValue(entry, cfg.colorProperty);
-    if (value && value.isTruthy()) {
-      const str = value.toString().trim();
-      if (str.length > 0) return str;
-    }
-  }
-
-  // 3. value→color rules (global): match the named frontmatter property's
-  // value(s) against the rule map.
-  if (cfg.colorByProperty && Object.keys(cfg.colorMap).length > 0) {
-    const raw = app.metadataCache.getCache(entry.file.path)?.frontmatter?.[
-      cfg.colorByProperty
-    ];
-    const values = Array.isArray(raw) ? raw : [raw];
-    for (const v of values) {
-      if (typeof v !== "string") continue;
-      const key = v.trim().toLowerCase();
-      if (key && cfg.colorMap[key]) return cfg.colorMap[key];
-    }
-  }
-
-  // 4. Color from a linked category note.
-  if (cfg.categoryProperty) {
-    const linked = resolveLinkedColor(
-      app,
-      entry,
-      cfg.categoryProperty,
-      cfg.linkedColorProperty,
-    );
-    if (linked) return linked;
-  }
-
   return undefined;
 }
 
 /**
- * Follow a frontmatter property that links to a category note (e.g.
- * `type: "[[restaurant]]"`) and read a color property from that note
- * (e.g. restaurant.md → `color: orange`). Mirrors the user's vault pattern.
- */
-function resolveLinkedColor(
-  app: App,
-  entry: BasesEntry,
-  categoryProperty: string,
-  linkedColorProperty: string,
-): string | undefined {
-  const sourcePath = entry.file.path;
-  const fm = app.metadataCache.getCache(sourcePath)?.frontmatter;
-  if (!fm) return undefined;
-
-  const rawValue = fm[categoryProperty];
-  if (rawValue === undefined || rawValue === null) return undefined;
-  const first = Array.isArray(rawValue) ? rawValue[0] : rawValue;
-  if (typeof first !== "string" || !first.trim()) return undefined;
-
-  // Strip a [[wikilink]] (optionally with alias) down to its linkpath.
-  const wiki = first.match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
-  const linkpath = (wiki ? wiki[1] : first).trim();
-  if (!linkpath) return undefined;
-
-  const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-  if (!dest) return undefined;
-
-  const targetColor = app.metadataCache.getFileCache(dest)?.frontmatter?.[
-    linkedColorProperty
-  ];
-  return typeof targetColor === "string" && targetColor.trim()
-    ? targetColor.trim()
-    : undefined;
-}
-
-/**
- * Resolve an event icon: an explicit `icon` frontmatter value (what right-click
- * → Set icon writes) takes precedence, then the configured icon property.
+ * Resolve an event icon from the configured icon property. Like the color
+ * property, this may be a literal frontmatter value (an emoji/symbol or Lucide
+ * name, e.g. set via right-click) or a Bases formula that pulls an icon from a
+ * linked type note (like the map view's marker icon). Resolves via
+ * `entry.getValue`.
  */
 function resolveIcon(
-  app: App,
   entry: BasesEntry,
   iconProperty: BasesPropertyId | null,
 ): string | undefined {
-  const explicit = app.metadataCache.getCache(entry.file.path)?.frontmatter
-    ?.icon;
-  if (typeof explicit === "string" && explicit.trim()) {
-    return explicit.trim();
-  }
-  if (iconProperty) {
-    const value = tryGetValue(entry, iconProperty);
-    if (value && value.isTruthy()) {
-      const str = value.toString().trim();
-      if (str.length > 0) return str;
-    }
+  // Default to the `icon` frontmatter field (right-click target) when no
+  // property is configured.
+  const propId = iconProperty ?? ("note.icon" as BasesPropertyId);
+  const value = tryGetValue(entry, propId);
+  if (value && value.isTruthy()) {
+    const str = value.toString().trim();
+    if (str.length > 0) return str;
   }
   return undefined;
 }

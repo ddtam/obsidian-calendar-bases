@@ -45,6 +45,15 @@ function toDateString(value: unknown): string {
   return m ? m[1] : "";
 }
 
+/**
+ * The writable frontmatter field name for a property id, or null if it isn't a
+ * plain note property (e.g. a formula) and so can't be written to.
+ */
+function noteFieldName(propId: BasesPropertyId | null): string | null {
+  if (!propId) return null;
+  return propId.startsWith("note.") ? propId.slice(5) : null;
+}
+
 export class CalendarView extends BasesView {
   type = CalendarViewType;
   scrollEl: HTMLElement;
@@ -59,10 +68,6 @@ export class CalendarView extends BasesView {
   private weekStartDay: number = 1;
   private displayMode: CalendarDisplayMode = "block";
   private colorProp: BasesPropertyId | null = null;
-  // Value→color is now global (plugin settings): a frontmatter property name
-  // plus a value→color map.
-  private colorByProp: string = "";
-  private colorMap: Record<string, string> = {};
   private showThumbnail: boolean = false;
   private imageProp: BasesPropertyId | null = null;
   private iconProp: BasesPropertyId | null = null;
@@ -71,9 +76,6 @@ export class CalendarView extends BasesView {
   private maxEventsPerDay: number = 0;
   private windowStart: string = "";
   private windowEnd: string = "";
-  // Global settings (linked-note color), read from the plugin in loadConfig.
-  private categoryProperty: string = "";
-  private linkedColorProperty: string = "color";
 
   constructor(
     controller: QueryController,
@@ -145,13 +147,6 @@ export class CalendarView extends BasesView {
     this.displayMode = displayModeValue === "dot" ? "dot" : "block";
 
     this.colorProp = this.config.getAsPropertyId("colorProperty");
-    // Value→color rules come from global plugin settings (vault-wide).
-    this.colorByProp = this.plugin.settings.colorByProperty;
-    this.colorMap = Object.fromEntries(
-      this.plugin.settings.colorRules
-        .filter((r) => r.value.trim())
-        .map((r) => [r.value.trim().toLowerCase(), r.color]),
-    );
     this.showThumbnail = Boolean(this.config.get("showThumbnail"));
     this.imageProp = this.config.getAsPropertyId("imageProperty");
     this.iconProp = this.config.getAsPropertyId("iconProperty");
@@ -161,11 +156,6 @@ export class CalendarView extends BasesView {
       parseInt(this.config.get("maxEventsPerDay") as string, 10) || 0;
     this.windowStart = toDateString(this.config.get("windowStart"));
     this.windowEnd = toDateString(this.config.get("windowEnd"));
-
-    // Linked-note color comes from global plugin settings.
-    this.categoryProperty = this.plugin.settings.categoryProperty;
-    this.linkedColorProperty =
-      this.plugin.settings.linkedColorProperty || "color";
   }
 
   private updateCalendar(): void {
@@ -219,10 +209,6 @@ export class CalendarView extends BasesView {
             properties={this.config.getOrder() || []}
             displayMode={this.displayMode}
             colorProperty={this.colorProp}
-            colorByProperty={this.colorByProp}
-            colorMap={this.colorMap}
-            categoryProperty={this.categoryProperty}
-            linkedColorProperty={this.linkedColorProperty}
             showThumbnail={this.showThumbnail}
             imageProperty={this.imageProp}
             iconProperty={this.iconProp}
@@ -288,39 +274,58 @@ export class CalendarView extends BasesView {
 
     this.app.workspace.handleLinkContextMenu(menu, file.path, "");
 
-    menu.addItem((item) =>
-      item
-        .setSection("action")
-        .setTitle("Set color…")
-        .setIcon("lucide-palette")
-        .onClick(() => {
-          const current =
-            this.app.metadataCache.getCache(file.path)?.frontmatter?.color ??
-            "";
-          new ColorPickerModal(
-            this.app,
-            String(current),
-            this.plugin.settings.palette,
-            (color) => {
-              void this.setEntryColor(entry, color);
-            },
-          ).open();
-        }),
-    );
+    // The right-click setters write to the configured Color/Icon property's note
+    // field (defaulting to `color`/`icon` when unset). Hidden when the property
+    // is a formula, which can't be written to.
+    const colorField =
+      this.colorProp == null ? "color" : noteFieldName(this.colorProp);
+    if (colorField) {
+      menu.addItem((item) =>
+        item
+          .setSection("action")
+          .setTitle("Set color…")
+          .setIcon("lucide-palette")
+          .onClick(() => {
+            const current =
+              this.app.metadataCache.getCache(file.path)?.frontmatter?.[
+                colorField
+              ] ?? "";
+            new ColorPickerModal(
+              this.app,
+              String(current),
+              this.plugin.settings.palette,
+              (color) => {
+                void this.setEntryField(entry, colorField, color);
+              },
+            ).open();
+          }),
+      );
+    }
 
-    menu.addItem((item) =>
-      item
-        .setSection("action")
-        .setTitle("Set icon…")
-        .setIcon("lucide-smile")
-        .onClick(() => {
-          const current =
-            this.app.metadataCache.getCache(file.path)?.frontmatter?.icon ?? "";
-          new IconPickerModal(this.app, String(current), (icon) => {
-            void this.setEntryIcon(entry, icon);
-          }).open();
-        }),
-    );
+    const iconField =
+      this.iconProp == null ? "icon" : noteFieldName(this.iconProp);
+    if (iconField) {
+      menu.addItem((item) =>
+        item
+          .setSection("action")
+          .setTitle("Set icon…")
+          .setIcon("lucide-smile")
+          .onClick(() => {
+            const current =
+              this.app.metadataCache.getCache(file.path)?.frontmatter?.[
+                iconField
+              ] ?? "";
+            new IconPickerModal(
+              this.app,
+              this.plugin,
+              String(current),
+              (icon) => {
+                void this.setEntryField(entry, iconField, icon);
+              },
+            ).open();
+          }),
+      );
+    }
 
     menu.addItem((item) =>
       item
@@ -332,28 +337,16 @@ export class CalendarView extends BasesView {
     );
   }
 
-  private async setEntryColor(
+  private async setEntryField(
     entry: BasesEntry,
-    color: string | null,
+    field: string,
+    value: string | null,
   ): Promise<void> {
     await this.app.fileManager.processFrontMatter(entry.file, (frontmatter) => {
-      if (color) {
-        frontmatter.color = color;
+      if (value) {
+        frontmatter[field] = value;
       } else {
-        delete frontmatter.color;
-      }
-    });
-  }
-
-  private async setEntryIcon(
-    entry: BasesEntry,
-    icon: string | null,
-  ): Promise<void> {
-    await this.app.fileManager.processFrontMatter(entry.file, (frontmatter) => {
-      if (icon) {
-        frontmatter.icon = icon;
-      } else {
-        delete frontmatter.icon;
+        delete frontmatter[field];
       }
     });
   }
@@ -411,7 +404,7 @@ export class CalendarView extends BasesView {
   static getViewOptions(): BasesAllOptions[] {
     return [
       {
-        displayName: "Date properties",
+        displayName: "Date Properties",
         type: "group",
         items: [
           {
@@ -426,20 +419,14 @@ export class CalendarView extends BasesView {
             key: "endDate",
             placeholder: "Property",
           },
-        ],
-      },
-      {
-        displayName: "Window (optional)",
-        type: "group",
-        items: [
           {
-            displayName: "Window start (YYYY-MM-DD)",
+            displayName: "Display window start (YYYY-MM-DD)",
             type: "text",
             key: "windowStart",
             placeholder: "e.g. 2026-08-01",
           },
           {
-            displayName: "Window end (YYYY-MM-DD)",
+            displayName: "Display window end (YYYY-MM-DD)",
             type: "text",
             key: "windowEnd",
             placeholder: "e.g. 2026-09-30",
@@ -486,7 +473,7 @@ export class CalendarView extends BasesView {
         ],
       },
       {
-        displayName: "Content & color",
+        displayName: "Content",
         type: "group",
         items: [
           {
@@ -508,13 +495,13 @@ export class CalendarView extends BasesView {
             placeholder: "Property",
           },
           {
-            displayName: "Color property (override)",
+            displayName: "Color property (value or formula)",
             type: "property",
             key: "colorProperty",
             placeholder: "Property",
           },
           {
-            displayName: "Icon property (emoji or Lucide name)",
+            displayName: "Icon property (value or formula)",
             type: "property",
             key: "iconProperty",
             placeholder: "Property",
