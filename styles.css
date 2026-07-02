@@ -192,26 +192,24 @@ body {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Calendar view — full width on mobile
+ * Calendar view — fill the readable text column on mobile
  *
- * With "Readable line length" on, the reading-view element wrapper (`.el-*`)
- * caps each block's width and the embed adds a ~16px indent, so on a phone the
- * calendar wastes side margins. On mobile, let a calendar embed use the full
- * content width: drop the readable-line cap on its wrapper and the embed indent.
- * Scoped to `.is-mobile` and wrappers that actually hold a calendar.
+ * With "Readable line length" on, a calendar embed renders ~16px narrower and
+ * indented vs the surrounding text: the reading-view element wrapper (`.el-*`,
+ * reading mode) and the embed itself (live preview) add inline padding around
+ * the grid. Remove only that padding so the grid fills the readable text column
+ * flush — in BOTH reading mode and live preview.
+ *
+ * We deliberately do NOT touch width/max-width/margins here: Obsidian's
+ * readable-line cap stays in place, so the calendar matches the text column
+ * width, not the full page.
  * ──────────────────────────────────────────────────────────────────────────── */
 .is-mobile .markdown-preview-view [class^="el-"]:has(.cbfork-container),
-.is-mobile .markdown-preview-view [class*=" el-"]:has(.cbfork-container) {
-  width: 100% !important;
-  max-width: none !important;
-  margin-inline: 0 !important;
-  /* the reading-view wrapper also carries a ~16px left padding — clear it so
-   * the grid is flush, not indented vs other content. */
+.is-mobile .markdown-preview-view [class*=" el-"]:has(.cbfork-container),
+.is-mobile
+  :is(.markdown-preview-view, .markdown-source-view)
+  .internal-embed.bases-embed:has(.cbfork-container) {
   padding-inline: 0 !important;
-}
-.is-mobile .internal-embed.bases-embed:has(.cbfork-container) {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
