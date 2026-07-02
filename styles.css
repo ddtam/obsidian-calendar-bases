@@ -212,6 +212,22 @@ body {
   padding-inline: 0 !important;
 }
 
+/* On phones the readable column still leaves a side margin, so the calendar sits
+ * inset while wide tables break out to the screen edge. Match that: full-bleed
+ * the calendar to the viewport width on phones only (`.is-phone`), so it starts
+ * flush with the screen like a table. iPad (`.is-tablet`) keeps the column width
+ * from the rule above. */
+.is-phone .markdown-preview-view [class^="el-"]:has(.cbfork-container),
+.is-phone .markdown-preview-view [class*=" el-"]:has(.cbfork-container),
+.is-phone
+  :is(.markdown-preview-view, .markdown-source-view)
+  .internal-embed.bases-embed:has(.cbfork-container) {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  margin-left: calc(50% - 50vw) !important;
+  margin-right: 0 !important;
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * Calendar view — appearance (single source of truth)
  *
