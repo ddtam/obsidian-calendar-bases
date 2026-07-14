@@ -1,5 +1,6 @@
 import { Plugin } from "obsidian";
 import { CalendarView, CalendarViewType } from "./calendar-view";
+import { clearThumbnailCache } from "./thumbnail-cache";
 import {
   CalendarBasesSettings,
   CalendarBasesSettingTab,
@@ -41,6 +42,7 @@ export default class ObsidianCalendarPlugin extends Plugin {
   onunload() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (this.app.workspace as any).hoverLinkSources["bases"];
+    clearThumbnailCache();
   }
 
   /** Rewrite any `type: calendar-fork` in .base files to `type: calendar`. */

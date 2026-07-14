@@ -15,9 +15,16 @@ import {
   setIcon,
   Value,
 } from "obsidian";
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useApp } from "./hooks";
+import { getScaledThumbnail } from "./thumbnail-cache";
 
 export interface CalendarHandle {
   updateSize(): void;
@@ -83,6 +90,49 @@ const EventIcon: React.FC<{ value: string; color?: string }> = ({
       style={isLucide && color ? { color } : undefined}
       ref={ref}
     />
+  );
+};
+
+/**
+ * Thumbnail card for an event. Never paints the full-resolution source image —
+ * it resolves a small, cached, downscaled data URL asynchronously (off the main
+ * thread) and paints that. Until it resolves, a neutral placeholder shows via
+ * CSS, so a multi-megapixel original never reaches the compositor.
+ */
+const EventThumbnail: React.FC<{
+  url: string;
+  color?: string;
+  children: React.ReactNode;
+}> = ({ url, color, children }) => {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(null);
+    void getScaledThumbnail(url).then((resolved) => {
+      if (!cancelled) setSrc(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  return (
+    <div
+      className="cbfork-event-card"
+      style={src ? { backgroundImage: `url("${cssUrl(src)}")` } : undefined}
+    >
+      <div
+        className="cbfork-event-overlay"
+        style={
+          color
+            ? { background: `color-mix(in srgb, ${color} 80%, transparent)` }
+            : undefined
+        }
+      >
+        {children}
+      </div>
+    </div>
   );
 };
 
@@ -507,30 +557,17 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
           </div>
         );
 
-      // With a thumbnail, render an image card: the image fills the event box
-      // and the text sits on a translucent band of the event's color.
+      // With a thumbnail, render an image card: a downscaled/cached copy of the
+      // image fills the event box and the text sits on a translucent band of the
+      // event's color.
       if (thumbnailUrl) {
         const evColor = eventInfo.event.extendedProps.dotColor as
           | string
           | undefined;
         return (
-          <div
-            className="cbfork-event-card"
-            style={{ backgroundImage: `url("${cssUrl(thumbnailUrl)}")` }}
-          >
-            <div
-              className="cbfork-event-overlay"
-              style={
-                evColor
-                  ? {
-                      background: `color-mix(in srgb, ${evColor} 80%, transparent)`,
-                    }
-                  : undefined
-              }
-            >
-              {body}
-            </div>
-          </div>
+          <EventThumbnail url={thumbnailUrl} color={evColor}>
+            {body}
+          </EventThumbnail>
         );
       }
 

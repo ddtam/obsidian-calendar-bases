@@ -508,6 +508,9 @@ body {
   overflow: hidden;
   background-size: cover;
   background-position: center;
+  /* Neutral placeholder while the downscaled thumbnail resolves asynchronously,
+     so the event looks intentional (and never flashes a full-res image). */
+  background-color: var(--background-secondary);
 }
 
 .cbfork-event-overlay {

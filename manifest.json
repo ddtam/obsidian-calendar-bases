@@ -1,7 +1,7 @@
 {
 	"id": "calendar-bases-fork",
 	"name": "Calendar Bases",
-	"version": "0.3.12",
+	"version": "0.3.13",
 	"minAppVersion": "1.10.0",
 	"description": "Adds a calendar layout to bases so you can display notes with dates in an interactive calendar view. Personal fork with relevant-month landing, faster navigation, and dot/color/thumbnail display.",
 	"author": "Derek Tam (fork of Edrick Leong's Calendar Bases)",
