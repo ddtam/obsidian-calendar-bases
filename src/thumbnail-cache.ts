@@ -32,20 +32,26 @@ function remember(key: string, value: string): void {
   }
 }
 
-// --- tiny concurrency gate ---------------------------------------------------
+// --- priority concurrency gate -----------------------------------------------
+// On-demand (visible) decodes take priority over prefetch: when a slot frees it
+// goes to a waiting on-demand task first, so background prefetch of neighbouring
+// months can never delay the thumbnails actually on screen.
 let active = 0;
-const waiters: Array<() => void> = [];
+const hiWaiters: Array<() => void> = [];
+const loWaiters: Array<() => void> = [];
 
-function acquire(): Promise<void> {
+function acquire(lowPriority: boolean): Promise<void> {
   if (active < MAX_CONCURRENT) {
     active++;
     return Promise.resolve();
   }
-  return new Promise<void>((resolve) => waiters.push(resolve));
+  return new Promise<void>((resolve) =>
+    (lowPriority ? loWaiters : hiWaiters).push(resolve),
+  );
 }
 
 function release(): void {
-  const next = waiters.shift();
+  const next = hiWaiters.shift() ?? loWaiters.shift();
   if (next) {
     next(); // hand off the slot without decrementing/incrementing `active`
   } else {
@@ -55,22 +61,24 @@ function release(): void {
 
 /**
  * Return a small (downscaled) data URL for `url`, decoding at most once per URL.
- * The longest edge is capped to `maxEdge`, preserving aspect ratio. Falls back
+ * The longest edge is capped to a fixed size, preserving aspect ratio. Falls back
  * to the original `url` if decoding fails (e.g. a cross-origin external image
- * that can't be fetched) so the event still shows something.
+ * that can't be fetched) so the event still shows something. Pass
+ * `{ prefetch: true }` for background warming — those decodes yield the pool to
+ * on-demand (visible) ones.
  */
 export function getScaledThumbnail(
   url: string,
-  maxEdge: number = DEFAULT_MAX_EDGE,
+  opts?: { prefetch?: boolean },
 ): Promise<string> {
-  const key = `${url}|${maxEdge}`;
+  const key = url;
   const existing = cache.get(key);
   if (existing !== undefined) {
     if (typeof existing === "string") remember(key, existing); // refresh LRU
     return Promise.resolve(existing);
   }
 
-  const task = scaleImage(url, maxEdge)
+  const task = scaleImage(url, !!opts?.prefetch)
     .then((dataUrl) => {
       remember(key, dataUrl);
       return dataUrl;
@@ -85,8 +93,8 @@ export function getScaledThumbnail(
   return task;
 }
 
-async function scaleImage(url: string, maxEdge: number): Promise<string> {
-  await acquire();
+async function scaleImage(url: string, lowPriority: boolean): Promise<string> {
+  await acquire(lowPriority);
   try {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`fetch failed: ${resp.status}`);
@@ -97,7 +105,7 @@ async function scaleImage(url: string, maxEdge: number): Promise<string> {
     const bitmap = await createImageBitmap(blob);
     try {
       const { width, height } = bitmap;
-      const scale = Math.min(1, maxEdge / Math.max(width, height));
+      const scale = Math.min(1, DEFAULT_MAX_EDGE / Math.max(width, height));
       const tw = Math.max(1, Math.round(width * scale));
       const th = Math.max(1, Math.round(height * scale));
 

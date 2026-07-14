@@ -1,4 +1,5 @@
 import type {
+  DatesSetArg,
   EventApi,
   EventClickArg,
   EventContentArg,
@@ -294,6 +295,46 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       },
     };
   });
+
+  // Background-prefetch thumbnails for the months adjacent to the visible range,
+  // so flipping to a nearby month finds them already downscaled/cached instead of
+  // decoding on arrival (which is the only remaining source of flip lag). Rebuilt
+  // each render from the current events; read by the datesSet handler below.
+  const thumbListRef = useRef<{ time: number; url: string }[]>([]);
+  thumbListRef.current = events.flatMap((e) =>
+    e.extendedProps.thumbnailUrl
+      ? [
+          {
+            time: (e.start as Date).getTime(),
+            url: e.extendedProps.thumbnailUrl as string,
+          },
+        ]
+      : [],
+  );
+
+  const handleDatesSet = useCallback((arg: DatesSetArg) => {
+    // Warm the visible range padded by ~a month on each side, but only once the
+    // browser is idle and at LOW priority — so the current month's own thumbnails
+    // (requested on-demand as their events mount) always decode first and the
+    // prefetch can never make the visible month slower. Anything already cached or
+    // in-flight is deduped, so re-warming the visible range costs nothing.
+    const pad = 31 * 24 * 60 * 60 * 1000;
+    const from = arg.start.getTime() - pad;
+    const to = arg.end.getTime() + pad;
+    const warm = () => {
+      for (const item of thumbListRef.current) {
+        if (item.time >= from && item.time <= to) {
+          void getScaledThumbnail(item.url, { prefetch: true });
+        }
+      }
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ric = (window as any).requestIdleCallback as
+      | ((cb: () => void, opts?: { timeout: number }) => void)
+      | undefined;
+    if (typeof ric === "function") ric(warm, { timeout: 2000 });
+    else window.setTimeout(warm, 400);
+  }, []);
 
   const handleEventClick = useCallback(
     (clickInfo: EventClickArg) => {
@@ -627,6 +668,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       }}
       eventClick={handleEventClick}
       eventMouseEnter={handleEventMouseEnter}
+      datesSet={handleDatesSet}
       eventDrop={(info) => void handleEventDrop(info)}
       height="auto"
       views={{
