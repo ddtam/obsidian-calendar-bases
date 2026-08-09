@@ -169,13 +169,25 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialDate = useMemo(() => computeRelevantDate(entries), []);
 
-  // A fixed visible window (start–end). When set, the calendar shows exactly
-  // this span instead of landing on the most relevant month. The range is
-  // snapped to whole weeks so the grid wraps into clean week rows rather than
-  // one long horizontal strip.
+  // When windowStart/windowEnd are absent, auto-fit to the span of entries.
+  const autoFitDates = useMemo(() => {
+    if (entries.length === 0) return null;
+    let minMs = Infinity, maxMs = -Infinity;
+    for (const { startDate } of entries) {
+      const ms = startDate.getTime();
+      if (ms < minMs) minMs = ms;
+      if (ms > maxMs) maxMs = ms;
+    }
+    return { start: new Date(minMs), end: new Date(maxMs) };
+  }, [entries]);
+
+  // A fixed visible window (start–end). When set explicitly or derivable from
+  // entries, the calendar shows exactly this span instead of landing on the
+  // most relevant month. The range is snapped to whole weeks so the grid wraps
+  // into clean week rows rather than one long horizontal strip.
   const windowRange = useMemo(() => {
-    const startRaw = parseLocalDate(windowStart);
-    const endRaw = parseLocalDate(windowEnd);
+    const startRaw = parseLocalDate(windowStart) ?? autoFitDates?.start ?? null;
+    const endRaw   = parseLocalDate(windowEnd)   ?? autoFitDates?.end   ?? null;
     if (!startRaw || !endRaw) return null;
     const startOfWeek = (d: Date): Date => {
       const x = new Date(d);
@@ -187,14 +199,14 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     const endExclusive = startOfWeek(endRaw);
     endExclusive.setDate(endExclusive.getDate() + 7); // week after the end week
     return { start, end: endExclusive };
-  }, [windowStart, windowEnd, weekStartDay]);
+  }, [windowStart, windowEnd, weekStartDay, autoFitDates]);
 
   // The exact (un-snapped) window, used to fade days outside it.
   const exactWindow = useMemo(() => {
-    const start = parseLocalDate(windowStart);
-    const end = parseLocalDate(windowEnd);
+    const start = parseLocalDate(windowStart) ?? autoFitDates?.start ?? null;
+    const end   = parseLocalDate(windowEnd)   ?? autoFitDates?.end   ?? null;
     return start && end ? { start, end } : null;
-  }, [windowStart, windowEnd]);
+  }, [windowStart, windowEnd, autoFitDates]);
 
   const headerToolbar = {
     left: windowRange ? "" : "dayGridMonth,dayGridWeek",
