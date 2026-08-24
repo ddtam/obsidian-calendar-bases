@@ -33,6 +33,14 @@ export interface CalendarHandle {
 
 export type CalendarDisplayMode = "block" | "dot";
 
+/**
+ * What to do when the base sets no explicit windowStart/windowEnd.
+ *
+ * "relevant": stay a normal month grid and land on the most relevant date.
+ * "fit": widen the window to span every entry, however long that is.
+ */
+export type CalendarAutoWindow = "relevant" | "fit";
+
 interface CalendarReactViewProps {
   entries: CalendarEntry[];
   weekStartDay: number;
@@ -48,6 +56,7 @@ interface CalendarReactViewProps {
   maxEventsPerDay: number;
   windowStart: string;
   windowEnd: string;
+  autoWindow: CalendarAutoWindow;
   onEntryClick: (entry: BasesEntry, isModEvent: boolean) => void;
   onEntryContextMenu: (evt: React.MouseEvent, entry: BasesEntry) => void;
   onEventDrop?: (
@@ -152,6 +161,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   maxEventsPerDay,
   windowStart,
   windowEnd,
+  autoWindow,
   onEntryClick,
   onEntryContextMenu,
   onEventDrop,
@@ -169,9 +179,12 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialDate = useMemo(() => computeRelevantDate(entries), []);
 
-  // When windowStart/windowEnd are absent, auto-fit to the span of entries.
+  // With no explicit window, "fit" stretches the grid across every entry.
+  // That is one week row per week of the span, so a base holding a year of
+  // dated notes renders roughly fifty of them; hence opt-in, with "relevant"
+  // (leave windowRange null, land on the nearest entry) as the default.
   const autoFitDates = useMemo(() => {
-    if (entries.length === 0) return null;
+    if (autoWindow !== "fit" || entries.length === 0) return null;
     let minMs = Infinity, maxMs = -Infinity;
     for (const { startDate } of entries) {
       const ms = startDate.getTime();
@@ -179,7 +192,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       if (ms > maxMs) maxMs = ms;
     }
     return { start: new Date(minMs), end: new Date(maxMs) };
-  }, [entries]);
+  }, [entries, autoWindow]);
 
   // A fixed visible window (start–end). When set explicitly or derivable from
   // entries, the calendar shows exactly this span instead of landing on the
@@ -207,6 +220,24 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     const end   = parseLocalDate(windowEnd)   ?? autoFitDates?.end   ?? null;
     return start && end ? { start, end } : null;
   }, [windowStart, windowEnd, autoFitDates]);
+
+  // Mount-time config: changing any of it remounts FullCalendar (see the
+  // `key` prop) so initialView/initialDate/visibleRange are re-applied.
+  const remountKey = `${windowStart}|${windowEnd}|${weekStartDay}|${displayMode}|${autoWindow}`;
+
+  // initialDate only helps if entries already exist when the calendar mounts.
+  // The query can resolve after that (and a remount reuses the mount-time
+  // memo above), so jump explicitly the first time entries arrive under a
+  // given remountKey. Once per mount, so a later data refresh never yanks the
+  // view away from wherever the user has navigated to.
+  const jumpedForKey = useRef<string | null>(null);
+  useEffect(() => {
+    // A fixed or fitted window shows its whole span; there is nothing to jump to.
+    if (windowRange || entries.length === 0) return;
+    if (jumpedForKey.current === remountKey) return;
+    jumpedForKey.current = remountKey;
+    calendarRef.current?.getApi().gotoDate(computeRelevantDate(entries));
+  }, [entries, windowRange, remountKey]);
 
   const headerToolbar = {
     left: windowRange ? "" : "dayGridMonth,dayGridWeek",
@@ -637,11 +668,11 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     <FullCalendar
       ref={calendarRef}
       // Remount when mount-time view config changes (window span, week start,
-      // display mode) so initialView/initialDate/visibleRange re-apply — without
-      // this, setting or clearing the window leaves a stale single-day view.
-      // The key excludes `entries`, so ordinary data updates don't remount and
-      // the user's navigation is preserved.
-      key={`${windowStart}|${windowEnd}|${weekStartDay}|${displayMode}`}
+      // display mode, auto-window mode) so initialView/initialDate/visibleRange
+      // re-apply. Without this, setting or clearing the window leaves a stale
+      // single-day view. The key excludes `entries`, so ordinary data updates
+      // don't remount and the user's navigation is preserved.
+      key={remountKey}
       plugins={[dayGridPlugin, interactionPlugin]}
       initialView={windowRange ? "dayGrid" : "dayGridMonth"}
       initialDate={windowRange ? undefined : initialDate}

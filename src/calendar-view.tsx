@@ -11,6 +11,7 @@ import {
 import React, { StrictMode } from "react";
 import { createRoot, Root } from "react-dom/client";
 import {
+  CalendarAutoWindow,
   CalendarDisplayMode,
   CalendarHandle,
   CalendarReactView,
@@ -76,6 +77,7 @@ export class CalendarView extends BasesView {
   private maxEventsPerDay: number = 0;
   private windowStart: string = "";
   private windowEnd: string = "";
+  private autoWindow: CalendarAutoWindow = "relevant";
 
   constructor(
     controller: QueryController,
@@ -156,6 +158,12 @@ export class CalendarView extends BasesView {
       parseInt(this.config.get("maxEventsPerDay") as string, 10) || 0;
     this.windowStart = toDateString(this.config.get("windowStart"));
     this.windowEnd = toDateString(this.config.get("windowEnd"));
+
+    // Unset on every base created before this option existed, so the fallback
+    // is the behaviour those bases were built against: land on the nearest
+    // entry rather than stretch the grid across the whole range.
+    this.autoWindow =
+      (this.config.get("autoWindow") as string) === "fit" ? "fit" : "relevant";
   }
 
   private updateCalendar(): void {
@@ -218,6 +226,7 @@ export class CalendarView extends BasesView {
             maxEventsPerDay={this.maxEventsPerDay}
             windowStart={this.windowStart}
             windowEnd={this.windowEnd}
+            autoWindow={this.autoWindow}
             onEntryClick={(entry, isModEvent) => {
               void this.app.workspace.openLinkText(
                 entry.file.path,
@@ -451,6 +460,16 @@ export class CalendarView extends BasesView {
             type: "text",
             key: "windowEnd",
             placeholder: "e.g. 2026-09-30",
+          },
+          {
+            displayName: "With no window set",
+            type: "dropdown",
+            key: "autoWindow",
+            default: "relevant",
+            options: {
+              relevant: "Jump to the nearest entry",
+              fit: "Fit the whole entry range",
+            },
           },
         ],
       },

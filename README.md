@@ -24,6 +24,9 @@ Built on [FullCalendar](https://github.com/fullcalendar/fullcalendar).
 - **Faster navigation** — prev/next **year** buttons and a **Month / Week** toggle.
 - **Fixed window** — pin the view to a date range (`windowStart`/`windowEnd`);
   days outside the window are faded.
+- **With no window set** — choose between jumping to the nearest entry (default,
+  an ordinary navigable month grid) and fitting the grid to the whole entry
+  range, which is one week row per week spanned.
 - **Display modes** — full **blocks** or compact **dots**; multi-day events show
   as a thin spanning bar in dot mode.
 - **Rich coloring**, in precedence order: an explicit per-note `color`
