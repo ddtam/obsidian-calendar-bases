@@ -13,6 +13,7 @@ import {
   BasesEntry,
   BasesPropertyId,
   DateValue,
+  Platform,
   setIcon,
   Value,
 } from "obsidian";
@@ -355,12 +356,36 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       : [],
   );
 
+  // A flip schedules a warm; the next flip cancels the one still pending.
+  // Without this, flipping n months queued n warms, which all landed at once
+  // when the browser finally went idle, since requestIdleCallback is starved
+  // while a finger is on the screen.
+  const warmHandleRef = useRef<{ idle?: number; timer?: number }>({});
+
+  const cancelWarm = useCallback(() => {
+    const h = warmHandleRef.current;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cic = (window as any).cancelIdleCallback as
+      | ((id: number) => void)
+      | undefined;
+    if (h.idle !== undefined && typeof cic === "function") cic(h.idle);
+    if (h.timer !== undefined) window.clearTimeout(h.timer);
+    warmHandleRef.current = {};
+  }, []);
+
+  useEffect(() => cancelWarm, [cancelWarm]);
+
   const handleDatesSet = useCallback((arg: DatesSetArg) => {
     // Warm the visible range padded by ~a month on each side, but only once the
     // browser is idle and at LOW priority — so the current month's own thumbnails
     // (requested on-demand as their events mount) always decode first and the
     // prefetch can never make the visible month slower. Anything already cached or
     // in-flight is deduped, so re-warming the visible range costs nothing.
+    cancelWarm();
+    // Prefetch trades memory for latency, which is the wrong trade on a device
+    // with a per-app ceiling. Visible thumbnails still decode on demand.
+    if (Platform.isMobile) return;
+
     const pad = 31 * 24 * 60 * 60 * 1000;
     const from = arg.start.getTime() - pad;
     const to = arg.end.getTime() + pad;
@@ -373,11 +398,14 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ric = (window as any).requestIdleCallback as
-      | ((cb: () => void, opts?: { timeout: number }) => void)
+      | ((cb: () => void, opts?: { timeout: number }) => number)
       | undefined;
-    if (typeof ric === "function") ric(warm, { timeout: 2000 });
-    else window.setTimeout(warm, 400);
-  }, []);
+    if (typeof ric === "function") {
+      warmHandleRef.current = { idle: ric(warm, { timeout: 2000 }) };
+    } else {
+      warmHandleRef.current = { timer: window.setTimeout(warm, 400) };
+    }
+  }, [cancelWarm]);
 
   const handleEventClick = useCallback(
     (clickInfo: EventClickArg) => {

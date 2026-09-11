@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+
 // In-memory downscale cache for calendar event thumbnails.
 //
 // Event thumbnail sources can be full-resolution photos (many megapixels).
@@ -12,15 +14,111 @@
 // the file mtime (e.g. `app://…/img.png?1780363958931`), so an edited image gets
 // a fresh entry and deleted images simply age out of the LRU.
 
-const MAX_ENTRIES = 256;
-const DEFAULT_MAX_EDGE = 320;
-// Bound how many full-res decodes run at once so first-open of a month can't
-// spike memory with a dozen simultaneous multi-megapixel bitmaps.
-const MAX_CONCURRENT = 3;
+// Mobile runs the same code under a per-app memory ceiling that desktop does
+// not have, and every constant below was originally chosen on desktop. A
+// single 12 MP photo is 48 MB once decoded, so three at once was fatal there
+// long before the cache filled.
+const MOBILE = Platform.isMobile;
+
+const MAX_ENTRIES = MOBILE ? 64 : 256;
+const DEFAULT_MAX_EDGE = MOBILE ? 160 : 320;
+// Bound how many decodes run at once. Each one holds a compressed blob and a
+// bitmap, so this multiplies whatever a single decode costs.
+const MAX_CONCURRENT = MOBILE ? 1 : 3;
+// What a decode may cost when the engine will not resize for us and we are
+// forced to decode at full resolution. Above this a mobile thumbnail is
+// dropped rather than decoded: no picture beats a killed WebView.
+const MOBILE_PIXEL_BUDGET = 4_000_000;
 
 // Map iteration order is insertion order, so it doubles as an LRU: on a hit we
 // re-insert to mark most-recently-used, and evict from the front when over cap.
 const cache = new Map<string, string | Promise<string>>();
+
+/**
+ * Whether createImageBitmap honours resizeWidth/resizeHeight here.
+ *
+ * When it does, the full-resolution bitmap is never materialised and a
+ * multi-megapixel photo costs the same as a thumbnail. Chromium honours it,
+ * which covers Obsidian on Android and desktop; WebKit has been patchy, so it
+ * is probed once against a known 8x8 image rather than assumed from the
+ * platform. A false here is what makes the pixel budget above load-bearing.
+ */
+let resizeSupport: Promise<boolean> | undefined;
+
+function canResizeOnDecode(): Promise<boolean> {
+  if (resizeSupport === undefined) {
+    resizeSupport = (async () => {
+      try {
+        const probe = document.createElement("canvas");
+        probe.width = 8;
+        probe.height = 8;
+        const blob: Blob | null = await new Promise((resolve) =>
+          probe.toBlob(resolve, "image/png"),
+        );
+        if (!blob) return false;
+        const bmp = await createImageBitmap(blob, {
+          resizeWidth: 4,
+          resizeHeight: 4,
+        });
+        const honoured = bmp.width === 4 && bmp.height === 4;
+        bmp.close();
+        return honoured;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return resizeSupport;
+}
+
+/**
+ * Width and height read from the file header, without decoding it.
+ *
+ * Needed because the resize options want a target size and the only other way
+ * to learn the source size is to decode, which is the cost being avoided.
+ * JPEG and PNG are parsed exactly, since photos and screenshots are what
+ * calendars carry; anything else returns undefined and takes the fallback
+ * below, which caps one edge rather than both.
+ */
+async function intrinsicSize(
+  blob: Blob,
+): Promise<{ width: number; height: number } | undefined> {
+  try {
+    const head = new DataView(await blob.slice(0, 65536).arrayBuffer());
+    if (head.byteLength < 24) return undefined;
+
+    // PNG: an 8-byte signature, then IHDR carries width and height as u32.
+    if (head.getUint32(0) === 0x89504e47 && head.getUint32(12) === 0x49484452) {
+      return { width: head.getUint32(16), height: head.getUint32(20) };
+    }
+
+    // JPEG: walk the marker chain to a start-of-frame, which carries the size.
+    // DHT/DAC/RST share the 0xC_ high nibble and are not frames.
+    if (head.getUint16(0) === 0xffd8) {
+      let i = 2;
+      while (i + 9 < head.byteLength) {
+        if (head.getUint8(i) !== 0xff) {
+          i++;
+          continue;
+        }
+        const marker = head.getUint8(i + 1);
+        if (marker >= 0xc0 && marker <= 0xcf &&
+            marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+          return { height: head.getUint16(i + 5), width: head.getUint16(i + 7) };
+        }
+        if (marker === 0xd8 || marker === 0x01 ||
+            (marker >= 0xd0 && marker <= 0xd7)) {
+          i += 2;
+          continue;
+        }
+        i += 2 + head.getUint16(i + 2);
+      }
+    }
+  } catch {
+    // A short read or a truncated file: fall through to the capped path.
+  }
+  return undefined;
+}
 
 function remember(key: string, value: string): void {
   cache.delete(key);
@@ -84,9 +182,13 @@ export function getScaledThumbnail(
       return dataUrl;
     })
     .catch(() => {
-      // Don't cache the failure — fall back to the original url this time.
+      // Don't cache the failure, so a transient one is retried.
       cache.delete(key);
-      return url;
+      // Desktop can afford to paint the original; mobile cannot. Falling back
+      // to the full-resolution url there would hand the compositor exactly the
+      // decode this module exists to avoid, which is how a safety valve turns
+      // into the crash it was guarding. No thumbnail instead.
+      return MOBILE ? "" : url;
     });
 
   cache.set(key, task);
@@ -100,14 +202,17 @@ async function scaleImage(url: string, lowPriority: boolean): Promise<string> {
     if (!resp.ok) throw new Error(`fetch failed: ${resp.status}`);
     const blob = await resp.blob();
 
-    // Decode off the main thread. Downscale to the target size, releasing the
-    // full-res bitmap immediately afterward.
-    const bitmap = await createImageBitmap(blob);
+    const bitmap = await decodeSmall(blob);
     try {
-      const { width, height } = bitmap;
-      const scale = Math.min(1, DEFAULT_MAX_EDGE / Math.max(width, height));
-      const tw = Math.max(1, Math.round(width * scale));
-      const th = Math.max(1, Math.round(height * scale));
+      // Cap here as well as at decode. On the path where the engine resized
+      // for us this is a 1:1 copy; on the path where it would not, this is
+      // where the downscale actually happens.
+      const scale = Math.min(
+        1,
+        DEFAULT_MAX_EDGE / Math.max(bitmap.width, bitmap.height),
+      );
+      const tw = Math.max(1, Math.round(bitmap.width * scale));
+      const th = Math.max(1, Math.round(bitmap.height * scale));
 
       const canvas = document.createElement("canvas");
       canvas.width = tw;
@@ -123,6 +228,42 @@ async function scaleImage(url: string, lowPriority: boolean): Promise<string> {
   } finally {
     release();
   }
+}
+
+/** A bitmap no larger than DEFAULT_MAX_EDGE, decoded as cheaply as possible. */
+async function decodeSmall(blob: Blob): Promise<ImageBitmap> {
+  const edge = DEFAULT_MAX_EDGE;
+
+  if (await canResizeOnDecode()) {
+    const size = await intrinsicSize(blob);
+    if (size) {
+      // Known dimensions: ask for the exact target, and never upscale, since
+      // an image already smaller than a thumbnail costs nothing to leave be.
+      const scale = Math.min(1, edge / Math.max(size.width, size.height));
+      return createImageBitmap(blob, {
+        resizeWidth: Math.max(1, Math.round(size.width * scale)),
+        resizeHeight: Math.max(1, Math.round(size.height * scale)),
+        resizeQuality: "medium",
+      });
+    }
+    // Unknown format. Capping width alone still bounds the decode: the height
+    // that comes back is the source aspect times the cap, so a tall image is
+    // taller than a thumbnail but nowhere near full resolution.
+    return createImageBitmap(blob, { resizeWidth: edge, resizeQuality: "medium" });
+  }
+
+  // The engine will not resize while decoding, so the full bitmap is about to
+  // exist. On mobile that is what kills the app, and a thumbnail is not worth
+  // it: above the budget, refuse.
+  if (MOBILE) {
+    const size = await intrinsicSize(blob);
+    if (!size || size.width * size.height > MOBILE_PIXEL_BUDGET) {
+      throw new Error("too large to decode safely on mobile");
+    }
+  }
+  // Returned at full size deliberately: the caller downscales it onto the
+  // canvas, because the resize options are exactly what this branch cannot use.
+  return createImageBitmap(blob);
 }
 
 /** Drop all cached thumbnails (called on plugin unload). */
