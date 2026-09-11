@@ -39,7 +39,21 @@ const MAX_CONCURRENT = MOBILE ? 1 : 3;
 // 20 MP admits an ordinary phone photo (4032x3024 is 12.2 MP) with room to
 // spare and refuses the pathological. Above it there is no thumbnail, which is
 // the right trade: the event still renders and the app survives.
-const MOBILE_PIXEL_BUDGET = 20_000_000;
+let mobilePixelBudget = 20_000_000;
+
+/**
+ * Raise or lower the ceiling from settings.
+ *
+ * Exposed because the question underneath it is not answerable from here:
+ * whether this engine inflates a large PNG despite honouring the resize
+ * options. Raising it is how a device answers that for itself, and the cost of
+ * being wrong is a crash, which is why the default does not move.
+ */
+export function setMobilePixelBudget(megapixels: number): void {
+  if (Number.isFinite(megapixels) && megapixels > 0) {
+    mobilePixelBudget = Math.round(megapixels * 1e6);
+  }
+}
 
 // Map iteration order is insertion order, so it doubles as an LRU: on a hit we
 // re-insert to mark most-recently-used, and evict from the front when over cap.
@@ -252,7 +266,7 @@ async function scaleImage(
 
     // Checked against the header, the last point at which this costs nothing.
     if (MOBILE && sniffed &&
-        sniffed.width * sniffed.height > MOBILE_PIXEL_BUDGET) {
+        sniffed.width * sniffed.height > mobilePixelBudget) {
       throw new Error(
         `${(sniffed.width * sniffed.height / 1e6).toFixed(1)} MP exceeds the ` +
           "mobile decode ceiling",

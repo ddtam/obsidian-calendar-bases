@@ -955,31 +955,40 @@ function resolveThumbnailUrl(
     return dest ? app.vault.getResourcePath(dest) : undefined;
   };
 
+  const out: string[] = [];
+
+  // The configured property goes first: it is the author saying which image
+  // represents the day. It no longer ends the search, though, because a choice
+  // that cannot be decoded on this device would otherwise leave the card
+  // blank, and a different picture beats none.
   if (imageProperty) {
     const value = tryGetValue(entry, imageProperty);
     if (value && value.isTruthy()) {
       let raw = value.toString().trim();
       if (raw.length > 0) {
-        if (/^https?:\/\//i.test(raw)) return [raw];
-        // Strip wikilink/markdown-image wrappers: [[img]], ![[img]], ![](img)
-        const wiki = raw.match(/!?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
-        if (wiki) raw = wiki[1].trim();
-        const md = raw.match(/!?\[[^\]]*\]\(([^)]+)\)/);
-        if (md) raw = md[1].trim();
-        if (/^https?:\/\//i.test(raw)) return [raw];
-        const resolved = resolveLinkpath(raw);
-        if (resolved) return [resolved];
+        if (/^https?:\/\//i.test(raw)) {
+          out.push(raw);
+        } else {
+          // Strip wikilink/markdown-image wrappers: [[img]], ![[img]], ![](img)
+          const wiki = raw.match(/!?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
+          if (wiki) raw = wiki[1].trim();
+          const md = raw.match(/!?\[[^\]]*\]\(([^)]+)\)/);
+          if (md) raw = md[1].trim();
+          const resolved = /^https?:\/\//i.test(raw)
+            ? raw
+            : resolveLinkpath(raw);
+          if (resolved) out.push(resolved);
+        }
       }
     }
   }
 
-  // Fall back to the note body's embeds, in order.
+  // Then the note body's embeds, in order.
   const cache = app.metadataCache.getCache(sourcePath);
-  const out: string[] = [];
   for (const embed of cache?.embeds ?? []) {
+    if (out.length >= MAX_THUMBNAIL_CANDIDATES) break;
     const resolved = resolveLinkpath(embed.link);
     if (resolved && !out.includes(resolved)) out.push(resolved);
-    if (out.length >= MAX_THUMBNAIL_CANDIDATES) break;
   }
   return out;
 }

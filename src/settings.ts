@@ -1,7 +1,11 @@
 import { App, Platform, PluginSettingTab, Setting } from "obsidian";
 import { toHex } from "./color-modal";
 import type ObsidianCalendarPlugin from "./main";
-import { canResizeOnDecode, thumbnailDecodePath } from "./thumbnail-cache";
+import {
+  canResizeOnDecode,
+  setMobilePixelBudget,
+  thumbnailDecodePath,
+} from "./thumbnail-cache";
 import { readStats } from "./thumbnail-stats";
 
 export interface CalendarBasesSettings {
@@ -17,6 +21,14 @@ export interface CalendarBasesSettings {
   iconReplacesDot: boolean;
   /** Most-recently-used icons (emoji or Lucide names) for the icon picker. */
   recentIcons: string[];
+  /**
+   * Largest source image, in megapixels, a phone will try to decode.
+   *
+   * Not a preference so much as a safety valve. A figure rendered at 300 DPI
+   * is around 39 MP and inflates to 155 MB whatever its file size, which is
+   * enough to have the app killed outright on iOS.
+   */
+  mobilePixelCeilingMP: number;
 }
 
 export const DEFAULT_PALETTE: string[] = [
@@ -36,6 +48,7 @@ export const DEFAULT_SETTINGS: CalendarBasesSettings = {
   defaultWeekStart: "sunday",
   iconReplacesDot: true,
   recentIcons: [],
+  mobilePixelCeilingMP: 20,
 };
 
 /** Resolve the current theme accent color to a hex string for the color picker. */
@@ -188,6 +201,29 @@ export class CalendarBasesSettingTab extends PluginSettingTab {
               + "anything over 24 megapixels is skipped rather than decoded.",
         );
       });
+    }
+
+    if (Platform.isMobile) {
+      new Setting(containerEl)
+        .setName("Largest image to decode")
+        .setDesc(
+          "Megapixels. Above this a phone shows no thumbnail rather than " +
+            "decoding, because a large image can cost far more memory than " +
+            "its file size suggests: a 300 DPI figure is 39 MP and 155 MB " +
+            "decoded at under 2 MB on disk. Raise it to find out whether this " +
+            "device can handle more; the cost of being wrong is a crash.",
+        )
+        .addSlider((sl) =>
+          sl
+            .setLimits(4, 80, 4)
+            .setValue(this.plugin.settings.mobilePixelCeilingMP)
+            .setDynamicTooltip()
+            .onChange(async (value) => {
+              this.plugin.settings.mobilePixelCeilingMP = value;
+              setMobilePixelBudget(value);
+              await this.plugin.saveSettings();
+            }),
+        );
     }
 
     const st = readStats(this.plugin.thumbnailStats);

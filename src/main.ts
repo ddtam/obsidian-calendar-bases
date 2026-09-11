@@ -1,6 +1,6 @@
 import { Plugin } from "obsidian";
 import { CalendarView, CalendarViewType } from "./calendar-view";
-import { clearThumbnailCache } from "./thumbnail-cache";
+import { clearThumbnailCache, setMobilePixelBudget } from "./thumbnail-cache";
 import { setStatsWriter, type ThumbnailStats } from "./thumbnail-stats";
 import {
   CalendarBasesSettings,
@@ -16,6 +16,7 @@ export default class ObsidianCalendarPlugin extends Plugin {
 
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    setMobilePixelBudget(this.settings.mobilePixelCeilingMP);
 
     // Register "bases" as a hover source that doesn't require CMD/CTRL
     // so Page Preview shows on regular hover over calendar events
