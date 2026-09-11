@@ -150,7 +150,12 @@ export class CalendarView extends BasesView {
 
     this.colorProp = this.config.getAsPropertyId("colorProperty");
     this.showThumbnail = Boolean(this.config.get("showThumbnail"));
-    this.imageProp = this.config.getAsPropertyId("imageProperty");
+    // `imageProperty` was this fork's own key before it adopted Bases'. Read
+    // it as a fallback so bases written against the old one keep working; it
+    // is no longer offered in the options.
+    this.imageProp =
+      this.config.getAsPropertyId("image") ??
+      this.config.getAsPropertyId("imageProperty");
     this.iconProp = this.config.getAsPropertyId("iconProperty");
     this.iconReplacesDot = this.plugin.settings.iconReplacesDot;
     this.titleRegex = (this.config.get("titleRegex") as string) || "";
@@ -531,7 +536,14 @@ export class CalendarView extends BasesView {
           {
             displayName: "Image property (optional)",
             type: "property",
-            key: "imageProperty",
+            // `image` is the key Bases' own Cards view uses, verified against
+            // app.js in 1.14.1, so switching a view between Cards and Calendar
+            // keeps the setting instead of silently losing it. Cards applies
+            // this filter too: file.file is a real image reference, the rest of
+            // the file.* namespace is metadata.
+            key: "image",
+            filter: (id: string) =>
+              id === "file.file" || !id.startsWith("file."),
             placeholder: "Property",
           },
           {

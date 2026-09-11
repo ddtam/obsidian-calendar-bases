@@ -26,7 +26,10 @@ import React, {
 } from "react";
 
 import { useApp } from "./hooks";
-import { abandonQueuedDecodes, getScaledThumbnail } from "./thumbnail-cache";
+import {
+  abandonQueuedDecodes,
+  getFirstUsableThumbnail,
+} from "./thumbnail-cache";
 import { noteFlip } from "./thumbnail-stats";
 
 export interface CalendarHandle {
@@ -112,10 +115,10 @@ const EventIcon: React.FC<{ value: string; color?: string }> = ({
  * CSS, so a multi-megapixel original never reaches the compositor.
  */
 const EventThumbnail: React.FC<{
-  url: string;
+  urls: string[];
   color?: string;
   children: React.ReactNode;
-}> = ({ url, color, children }) => {
+}> = ({ urls, color, children }) => {
   const [src, setSrc] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   // A month grid is six weeks and renders every event in all of them, but a
@@ -147,17 +150,20 @@ const EventThumbnail: React.FC<{
     return () => io.disconnect();
   }, []);
 
+  // Joined, so the effect re-runs when the candidate set changes rather than
+  // on every render that rebuilds the array.
+  const key = urls.join("|");
   useEffect(() => {
     if (!wanted) return;
     let cancelled = false;
     setSrc(null);
-    void getScaledThumbnail(url).then((resolved) => {
-      if (!cancelled) setSrc(resolved);
+    void getFirstUsableThumbnail(key ? key.split("|") : []).then((resolved) => {
+      if (!cancelled) setSrc(resolved || null);
     });
     return () => {
       cancelled = true;
     };
-  }, [url, wanted]);
+  }, [key, wanted]);
 
   return (
     <div
@@ -333,10 +339,10 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     }
 
     const color = extractColor(calEntry.entry, colorProperty);
-    const thumbnailUrl =
+    const thumbnailUrls =
       showThumbnail && app
         ? resolveThumbnailUrl(app, calEntry.entry, imageProperty)
-        : undefined;
+        : [];
     const icon = resolveIcon(calEntry.entry, iconProperty);
 
     const isMultiDay = adjustedEndDate !== undefined;
@@ -363,7 +369,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         entry: calEntry.entry,
         originalEndDate: calEntry.endDate, // Keep track of original end date for drag operations
         dotColor: color,
-        thumbnailUrl,
+        thumbnailUrls,
         icon,
         isMultiDay,
         isCurrent:
@@ -378,11 +384,11 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
   // each render from the current events; read by the datesSet handler below.
   const thumbListRef = useRef<{ time: number; url: string }[]>([]);
   thumbListRef.current = events.flatMap((e) =>
-    e.extendedProps.thumbnailUrl
+    (e.extendedProps.thumbnailUrls as string[]).length
       ? [
           {
             time: (e.start as Date).getTime(),
-            url: e.extendedProps.thumbnailUrl as string,
+            url: (e.extendedProps.thumbnailUrls as string[])[0],
           },
         ]
       : [],
@@ -426,7 +432,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     const warm = () => {
       for (const item of thumbListRef.current) {
         if (item.time >= from && item.time <= to) {
-          void getScaledThumbnail(item.url, { prefetch: true });
+          void getFirstUsableThumbnail([item.url], { prefetch: true });
         }
       }
     };
@@ -651,9 +657,8 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         );
       }
 
-      const thumbnailUrl = eventInfo.event.extendedProps.thumbnailUrl as
-        | string
-        | undefined;
+      const thumbnailUrls = (eventInfo.event.extendedProps.thumbnailUrls ??
+        []) as string[];
 
       const validProperties: { propertyId: BasesPropertyId; value: Value }[] =
         [];
@@ -706,12 +711,12 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       // With a thumbnail, render an image card: a downscaled/cached copy of the
       // image fills the event box and the text sits on a translucent band of the
       // event's color.
-      if (thumbnailUrl) {
+      if (thumbnailUrls.length > 0) {
         const evColor = eventInfo.event.extendedProps.dotColor as
           | string
           | undefined;
         return (
-          <EventThumbnail url={thumbnailUrl} color={evColor}>
+          <EventThumbnail urls={thumbnailUrls} color={evColor}>
             {body}
           </EventThumbnail>
         );
@@ -763,7 +768,10 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         if (displayMode === "dot" && arg.event.extendedProps.isMultiDay) {
           cls.push("cb-dot-bar");
         }
-        if (displayMode !== "dot" && arg.event.extendedProps.thumbnailUrl) {
+        if (
+          displayMode !== "dot" &&
+          (arg.event.extendedProps.thumbnailUrls as string[])?.length
+        ) {
           cls.push("cbfork-has-thumb");
         }
         if (arg.event.extendedProps.isCurrent) {
@@ -917,14 +925,29 @@ function resolveIcon(
 }
 
 /**
- * Resolve a thumbnail URL for an entry: the configured image property if set
- * (wikilink, vault path, or external URL), otherwise the note's first embed.
+ * How far down a note's embeds to look for one that can be shown.
+ *
+ * A note of scientific figures can hold a dozen images, any of which may be
+ * too large for a phone to decode. Walking them costs a file read each, so the
+ * walk is bounded: past this, the event renders without a picture.
+ */
+const MAX_THUMBNAIL_CANDIDATES = 4;
+
+/**
+ * Resolve thumbnail candidates for an entry, best first: the configured image
+ * property if set (wikilink, vault path, or external URL), then the note's
+ * embeds in document order.
+ *
+ * More than one, because the first embed is not always usable. A figure kept
+ * at full resolution is the right thing to have in the note and the wrong
+ * thing to hand a phone, and the reader would rather see the second image than
+ * none. The caller takes the first that decodes.
  */
 function resolveThumbnailUrl(
   app: App,
   entry: BasesEntry,
   imageProperty: BasesPropertyId | null,
-): string | undefined {
+): string[] {
   const sourcePath = entry.file.path;
 
   const resolveLinkpath = (linkpath: string): string | undefined => {
@@ -937,25 +960,26 @@ function resolveThumbnailUrl(
     if (value && value.isTruthy()) {
       let raw = value.toString().trim();
       if (raw.length > 0) {
-        if (/^https?:\/\//i.test(raw)) return raw;
+        if (/^https?:\/\//i.test(raw)) return [raw];
         // Strip wikilink/markdown-image wrappers: [[img]], ![[img]], ![](img)
         const wiki = raw.match(/!?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
         if (wiki) raw = wiki[1].trim();
         const md = raw.match(/!?\[[^\]]*\]\(([^)]+)\)/);
         if (md) raw = md[1].trim();
-        if (/^https?:\/\//i.test(raw)) return raw;
+        if (/^https?:\/\//i.test(raw)) return [raw];
         const resolved = resolveLinkpath(raw);
-        if (resolved) return resolved;
+        if (resolved) return [resolved];
       }
     }
   }
 
-  // Fall back to the first embed in the note body.
+  // Fall back to the note body's embeds, in order.
   const cache = app.metadataCache.getCache(sourcePath);
-  const firstEmbed = cache?.embeds?.[0];
-  if (firstEmbed) {
-    return resolveLinkpath(firstEmbed.link);
+  const out: string[] = [];
+  for (const embed of cache?.embeds ?? []) {
+    const resolved = resolveLinkpath(embed.link);
+    if (resolved && !out.includes(resolved)) out.push(resolved);
+    if (out.length >= MAX_THUMBNAIL_CANDIDATES) break;
   }
-
-  return undefined;
+  return out;
 }

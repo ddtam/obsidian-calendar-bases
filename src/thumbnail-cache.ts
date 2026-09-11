@@ -331,6 +331,24 @@ async function decodeSmall(blob: Blob): Promise<ImageBitmap> {
   return createImageBitmap(blob);
 }
 
+/**
+ * The first of `urls` that yields a thumbnail, in order.
+ *
+ * A refusal is not a failure: an image over the mobile decode ceiling, or one
+ * whose format cannot be bounded, means try the next candidate. Only when
+ * every candidate is refused does the event go without a picture.
+ */
+export async function getFirstUsableThumbnail(
+  urls: string[],
+  opts?: { prefetch?: boolean },
+): Promise<string> {
+  for (const url of urls) {
+    const resolved = await getScaledThumbnail(url, opts);
+    if (resolved) return resolved;
+  }
+  return "";
+}
+
 /** Drop all cached thumbnails (called on plugin unload). */
 export function clearThumbnailCache(): void {
   cache.clear();
