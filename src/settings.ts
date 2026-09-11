@@ -1,6 +1,7 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Platform, PluginSettingTab, Setting } from "obsidian";
 import { toHex } from "./color-modal";
 import type ObsidianCalendarPlugin from "./main";
+import { canResizeOnDecode, thumbnailDecodePath } from "./thumbnail-cache";
 
 export interface CalendarBasesSettings {
   /** Color for events that have no color of their own. Empty = theme accent. */
@@ -170,6 +171,23 @@ export class CalendarBasesSettingTab extends PluginSettingTab {
             this.display();
           }),
       );
+
+    if (Platform.isMobile) {
+      // Two decode paths with very different memory characteristics, and no
+      // console on iOS without attaching a Mac. Report which one this device
+      // took rather than leaving it to be inferred from whether it crashed.
+      const row = new Setting(containerEl)
+        .setName("Image decoding")
+        .setDesc("Checking...");
+      void canResizeOnDecode().then(() => {
+        row.setDesc(
+          thumbnailDecodePath() === "resize-on-decode"
+            ? "Resizes while decoding. A photo costs the same as a thumbnail."
+            : "Decodes at full size, then downscales. One image at a time, and "
+              + "anything over 24 megapixels is skipped rather than decoded.",
+        );
+      });
+    }
 
     this.plugin.settings.palette.forEach((color, i) => {
       new Setting(containerEl)

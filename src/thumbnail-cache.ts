@@ -25,10 +25,14 @@ const DEFAULT_MAX_EDGE = MOBILE ? 160 : 320;
 // Bound how many decodes run at once. Each one holds a compressed blob and a
 // bitmap, so this multiplies whatever a single decode costs.
 const MAX_CONCURRENT = MOBILE ? 1 : 3;
-// What a decode may cost when the engine will not resize for us and we are
-// forced to decode at full resolution. Above this a mobile thumbnail is
-// dropped rather than decoded: no picture beats a killed WebView.
-const MOBILE_PIXEL_BUDGET = 4_000_000;
+// What a decode may cost when the engine will not resize for us and the full
+// bitmap has to exist. The crash this module was rewritten for was three of
+// these at once plus a prefetch queue; with MAX_CONCURRENT at 1 and prefetch
+// off, one at a time is the whole exposure, and it is freed immediately after
+// the canvas draw. So the budget admits an ordinary phone photo (12 MP is
+// 48 MB) and refuses only the pathological, because a fork that silently drops
+// every thumbnail is the workaround the user already had.
+const MOBILE_PIXEL_BUDGET = 24_000_000;
 
 // Map iteration order is insertion order, so it doubles as an LRU: on a hit we
 // re-insert to mark most-recently-used, and evict from the front when over cap.
@@ -45,7 +49,21 @@ const cache = new Map<string, string | Promise<string>>();
  */
 let resizeSupport: Promise<boolean> | undefined;
 
-function canResizeOnDecode(): Promise<boolean> {
+/**
+ * Which decode path was taken, for the settings tab to report.
+ *
+ * On iOS there is no console to read without attaching a Mac, and the two
+ * paths have very different characteristics, so the plugin says which one it
+ * is on rather than leaving it to be inferred from whether it crashed.
+ */
+export type DecodePath = "unknown" | "resize-on-decode" | "full-then-downscale";
+let decodePath: DecodePath = "unknown";
+
+export function thumbnailDecodePath(): DecodePath {
+  return decodePath;
+}
+
+export function canResizeOnDecode(): Promise<boolean> {
   if (resizeSupport === undefined) {
     resizeSupport = (async () => {
       try {
@@ -62,8 +80,10 @@ function canResizeOnDecode(): Promise<boolean> {
         });
         const honoured = bmp.width === 4 && bmp.height === 4;
         bmp.close();
+        decodePath = honoured ? "resize-on-decode" : "full-then-downscale";
         return honoured;
       } catch {
+        decodePath = "full-then-downscale";
         return false;
       }
     })();
