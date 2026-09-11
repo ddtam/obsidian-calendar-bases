@@ -2,6 +2,7 @@ import { App, Platform, PluginSettingTab, Setting } from "obsidian";
 import { toHex } from "./color-modal";
 import type ObsidianCalendarPlugin from "./main";
 import { canResizeOnDecode, thumbnailDecodePath } from "./thumbnail-cache";
+import { readStats } from "./thumbnail-stats";
 
 export interface CalendarBasesSettings {
   /** Color for events that have no color of their own. Empty = theme accent. */
@@ -187,6 +188,27 @@ export class CalendarBasesSettingTab extends PluginSettingTab {
               + "anything over 24 megapixels is skipped rather than decoded.",
         );
       });
+    }
+
+    const st = readStats(this.plugin.thumbnailStats);
+    new Setting(containerEl).setName("Thumbnail diagnostics").setHeading();
+    new Setting(containerEl)
+      .setName("Last month flip")
+      .setDesc(
+        `${st.lastFlip}: ${st.requested} requested, ${st.decoded} decoded, ` +
+          `${(st.bytes / 1e6).toFixed(1)} MB fetched`,
+      );
+    new Setting(containerEl)
+      .setName("Largest source")
+      .setDesc(
+        `${st.maxDims}` +
+          (st.maxPixels ? ` (${(st.maxPixels / 1e6).toFixed(1)} MP)` : "") +
+          (st.formats.length ? `, formats: ${st.formats.join(", ")}` : ""),
+      );
+    if (st.errors > 0) {
+      new Setting(containerEl)
+        .setName("Decode errors")
+        .setDesc(`${st.errors}, first: ${st.firstError}`);
     }
 
     this.plugin.settings.palette.forEach((color, i) => {

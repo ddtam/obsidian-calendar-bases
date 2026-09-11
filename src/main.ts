@@ -1,6 +1,7 @@
 import { Plugin } from "obsidian";
 import { CalendarView, CalendarViewType } from "./calendar-view";
 import { clearThumbnailCache } from "./thumbnail-cache";
+import { setStatsWriter, type ThumbnailStats } from "./thumbnail-stats";
 import {
   CalendarBasesSettings,
   CalendarBasesSettingTab,
@@ -9,6 +10,8 @@ import {
 
 export default class ObsidianCalendarPlugin extends Plugin {
   settings: CalendarBasesSettings = { ...DEFAULT_SETTINGS };
+  /** Last persisted thumbnail counters; survives an out-of-memory kill. */
+  thumbnailStats: Partial<ThumbnailStats> = {};
   private views: Set<CalendarView> = new Set();
 
   async onload() {
@@ -29,6 +32,17 @@ export default class ObsidianCalendarPlugin extends Plugin {
       factory: (controller, containerEl) =>
         new CalendarView(controller, containerEl, this),
       options: () => CalendarView.getViewOptions(),
+    });
+
+    const saved = (await this.loadData()) as
+      | { thumbnailStats?: Partial<ThumbnailStats> }
+      | null;
+    this.thumbnailStats = saved?.thumbnailStats ?? {};
+    setStatsWriter((s) => {
+      this.thumbnailStats = s;
+      // Deliberately not saveSettings: that refreshes every view, which would
+      // rebuild the calendar underneath the decodes being counted.
+      void this.saveDiagnostics();
     });
 
     this.addSettingTab(new CalendarBasesSettingTab(this.app, this));
@@ -66,8 +80,13 @@ export default class ObsidianCalendarPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.saveData({ ...this.settings, thumbnailStats: this.thumbnailStats });
     this.refreshViews();
+  }
+
+  /** Persist counters without touching the views. Diagnostic only. */
+  async saveDiagnostics(): Promise<void> {
+    await this.saveData({ ...this.settings, thumbnailStats: this.thumbnailStats });
   }
 
   registerCalendarView(view: CalendarView): void {

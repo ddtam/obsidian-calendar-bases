@@ -1,4 +1,5 @@
 import { Platform } from "obsidian";
+import { noteDecode, noteError, noteRequest } from "./thumbnail-stats";
 
 // In-memory downscale cache for calendar event thumbnails.
 //
@@ -190,6 +191,7 @@ export function getScaledThumbnail(
   opts?: { prefetch?: boolean },
 ): Promise<string> {
   const key = url;
+  noteRequest();
   const existing = cache.get(key);
   if (existing !== undefined) {
     if (typeof existing === "string") remember(key, existing); // refresh LRU
@@ -201,7 +203,8 @@ export function getScaledThumbnail(
       remember(key, dataUrl);
       return dataUrl;
     })
-    .catch(() => {
+    .catch((e: unknown) => {
+      noteError(e instanceof Error ? e.message : String(e));
       // Don't cache the failure, so a transient one is retried.
       cache.delete(key);
       // Desktop can afford to paint the original; mobile cannot. Falling back
@@ -221,6 +224,8 @@ async function scaleImage(url: string, lowPriority: boolean): Promise<string> {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`fetch failed: ${resp.status}`);
     const blob = await resp.blob();
+    const sniffed = await intrinsicSize(blob);
+    noteDecode(blob.size, blob.type || "unknown", sniffed?.width, sniffed?.height);
 
     const bitmap = await decodeSmall(blob);
     try {
