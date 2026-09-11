@@ -241,11 +241,22 @@ async function scaleImage(url: string, lowPriority: boolean): Promise<string> {
       if (!ctx) throw new Error("no 2d canvas context");
       ctx.drawImage(bitmap, 0, 0, tw, th);
       // JPEG keeps the data URL small; thumbnails are decorative so lossy is fine.
-      return canvas.toDataURL("image/jpeg", 0.82);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      // Drop the backing store now rather than waiting for collection. A
+      // canvas holds its pixels outside the JS heap, so a run of them can
+      // outlive the garbage collector's interest in the small objects that
+      // reference them.
+      canvas.width = 0;
+      canvas.height = 0;
+      return dataUrl;
     } finally {
       bitmap.close();
     }
   } finally {
+    // Yield before handing the slot on, so a long run of decodes gives the
+    // engine a chance to reclaim the blobs and canvases behind it instead of
+    // allocating the next one immediately on top.
+    if (MOBILE) await new Promise((r) => window.setTimeout(r, 0));
     release();
   }
 }

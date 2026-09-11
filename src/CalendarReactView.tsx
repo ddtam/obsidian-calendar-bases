@@ -116,8 +116,38 @@ const EventThumbnail: React.FC<{
   children: React.ReactNode;
 }> = ({ url, color, children }) => {
   const [src, setSrc] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // A month grid is six weeks and renders every event in all of them, but a
+  // phone shows two or three weeks at a time. Decoding all of them on arrival
+  // is what made the cost scale with the month rather than with the screen:
+  // setting "Max events per day" to 1 fixed the crash by hand, which is this
+  // bound applied crudely. Ask for the image only once its card is near view.
+  const [wanted, setWanted] = useState(false);
 
   useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setWanted(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setWanted(true);
+          io.disconnect();
+        }
+      },
+      // A screen's worth of lead time, so scrolling finds them already decoded
+      // rather than watching them appear.
+      { rootMargin: "300px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!wanted) return;
     let cancelled = false;
     setSrc(null);
     void getScaledThumbnail(url).then((resolved) => {
@@ -126,10 +156,11 @@ const EventThumbnail: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, wanted]);
 
   return (
     <div
+      ref={cardRef}
       className="cbfork-event-card"
       style={src ? { backgroundImage: `url("${cssUrl(src)}")` } : undefined}
     >
