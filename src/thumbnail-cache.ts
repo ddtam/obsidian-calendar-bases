@@ -26,14 +26,20 @@ const DEFAULT_MAX_EDGE = MOBILE ? 160 : 320;
 // Bound how many decodes run at once. Each one holds a compressed blob and a
 // bitmap, so this multiplies whatever a single decode costs.
 const MAX_CONCURRENT = MOBILE ? 1 : 3;
-// What a decode may cost when the engine will not resize for us and the full
-// bitmap has to exist. The crash this module was rewritten for was three of
-// these at once plus a prefetch queue; with MAX_CONCURRENT at 1 and prefetch
-// off, one at a time is the whole exposure, and it is freed immediately after
-// the canvas draw. So the budget admits an ordinary phone photo (12 MP is
-// 48 MB) and refuses only the pathological, because a fork that silently drops
-// every thumbnail is the workaround the user already had.
-const MOBILE_PIXEL_BUDGET = 24_000_000;
+// A ceiling on the source an iOS device will attempt at all, whichever decode
+// path is taken.
+//
+// It applied only where the engine refused to resize, on the reasoning that
+// resize-on-decode makes the source size irrelevant. Measured 2026-09-11, that
+// reasoning is wrong: this vault holds a 7200x5400 PNG, 155 MB once inflated,
+// and honouring resizeWidth does not mean the decoder avoided inflating it.
+// PNG especially, since the whole bitmap has to be reconstructed before
+// anything can be scaled.
+//
+// 20 MP admits an ordinary phone photo (4032x3024 is 12.2 MP) with room to
+// spare and refuses the pathological. Above it there is no thumbnail, which is
+// the right trade: the event still renders and the app survives.
+const MOBILE_PIXEL_BUDGET = 20_000_000;
 
 // Map iteration order is insertion order, so it doubles as an LRU: on a hit we
 // re-insert to mark most-recently-used, and evict from the front when over cap.
@@ -49,6 +55,17 @@ const cache = new Map<string, string | Promise<string>>();
  * platform. A false here is what makes the pixel budget above load-bearing.
  */
 let resizeSupport: Promise<boolean> | undefined;
+
+// Which visible range the queue is working for. Flipping quickly left a
+// backlog still decoding months already gone: measured as 14 decodes landing
+// against 8 requests inside one flip's window, the surplus carried over from
+// flips before it. A task reaching the front of the queue for a range nobody
+// is looking at now is abandoned instead.
+let generation = 0;
+
+export function abandonQueuedDecodes(): void {
+  generation++;
+}
 
 /**
  * Which decode path was taken, for the settings tab to report.
@@ -198,7 +215,7 @@ export function getScaledThumbnail(
     return Promise.resolve(existing);
   }
 
-  const task = scaleImage(url, !!opts?.prefetch)
+  const task = scaleImage(url, !!opts?.prefetch, generation)
     .then((dataUrl) => {
       remember(key, dataUrl);
       return dataUrl;
@@ -218,14 +235,29 @@ export function getScaledThumbnail(
   return task;
 }
 
-async function scaleImage(url: string, lowPriority: boolean): Promise<string> {
+async function scaleImage(
+  url: string,
+  lowPriority: boolean,
+  bornAt: number,
+): Promise<string> {
   await acquire(lowPriority);
   try {
+    // Waited behind other decodes, and the calendar has moved on since.
+    if (bornAt !== generation) throw new Error("stale: range changed");
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`fetch failed: ${resp.status}`);
     const blob = await resp.blob();
     const sniffed = await intrinsicSize(blob);
     noteDecode(blob.size, blob.type || "unknown", sniffed?.width, sniffed?.height);
+
+    // Checked against the header, the last point at which this costs nothing.
+    if (MOBILE && sniffed &&
+        sniffed.width * sniffed.height > MOBILE_PIXEL_BUDGET) {
+      throw new Error(
+        `${(sniffed.width * sniffed.height / 1e6).toFixed(1)} MP exceeds the ` +
+          "mobile decode ceiling",
+      );
+    }
 
     const bitmap = await decodeSmall(blob);
     try {
@@ -288,14 +320,11 @@ async function decodeSmall(blob: Blob): Promise<ImageBitmap> {
     return createImageBitmap(blob, { resizeWidth: edge, resizeQuality: "medium" });
   }
 
-  // The engine will not resize while decoding, so the full bitmap is about to
-  // exist. On mobile that is what kills the app, and a thumbnail is not worth
-  // it: above the budget, refuse.
-  if (MOBILE) {
-    const size = await intrinsicSize(blob);
-    if (!size || size.width * size.height > MOBILE_PIXEL_BUDGET) {
-      throw new Error("too large to decode safely on mobile");
-    }
+  // The size ceiling already ran against the header in scaleImage. What can
+  // still arrive here is a format whose header we cannot read, and with no
+  // resize to lean on there is no way to bound what decoding it would cost.
+  if (MOBILE && !(await intrinsicSize(blob))) {
+    throw new Error("unknown format, no safe way to bound the decode");
   }
   // Returned at full size deliberately: the caller downscales it onto the
   // canvas, because the resize options are exactly what this branch cannot use.

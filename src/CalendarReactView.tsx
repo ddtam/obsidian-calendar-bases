@@ -26,7 +26,7 @@ import React, {
 } from "react";
 
 import { useApp } from "./hooks";
-import { getScaledThumbnail } from "./thumbnail-cache";
+import { abandonQueuedDecodes, getScaledThumbnail } from "./thumbnail-cache";
 import { noteFlip } from "./thumbnail-stats";
 
 export interface CalendarHandle {
@@ -414,6 +414,7 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     // prefetch can never make the visible month slower. Anything already cached or
     // in-flight is deduped, so re-warming the visible range costs nothing.
     cancelWarm();
+    abandonQueuedDecodes();
     noteFlip(arg.start.toISOString().slice(0, 10));
     // Prefetch trades memory for latency, which is the wrong trade on a device
     // with a per-app ceiling. Visible thumbnails still decode on demand.
