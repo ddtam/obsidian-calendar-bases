@@ -1,4 +1,4 @@
-// Single-step release for the Calendar Bases fork. Bumps versions, builds,
+// Single-step release for a house plugin fork. Bumps versions, builds,
 // commits, pushes, and creates a GitHub release with the build artifacts
 // attached.
 //
@@ -55,6 +55,15 @@ if (previousVersion === version) {
 manifest.version = version;
 await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`manifest.json: ${previousVersion} -> ${version}`);
+
+// The plugin's own name, not a copied constant. This script is vendored into
+// each fork, and in Highlightr the name came along with it: eighteen releases
+// announced themselves as "Calendar Bases". Every other fork happened to be
+// corrected by hand, which is the same fix applied five times and forgotten
+// once. manifest.json is right in every fork by construction, so read it
+// there and the next copy cannot inherit the wrong name.
+const pluginName = manifest.name;
+
 
 // 2. Add to versions.json (insert at top so newest is first)
 const versionsPath = resolve(root, "versions.json");
@@ -134,9 +143,9 @@ console.log("\n--- creating GitHub release ---");
 execSync(
   `gh release create ${version} main.js styles.css manifest.json` +
     ` --repo ${repo}` +
-    ` --title "Calendar Bases ${version}"` +
+    ` --title "${pluginName} ${version}"` +
     " --notes-file -",
   { cwd: root, stdio: ["pipe", "inherit", "inherit"], input: notes },
 );
 
-console.log(`\ndone: Calendar Bases ${version} released to ${repo}.`);
+console.log(`\ndone: ${pluginName} ${version} released to ${repo}.`);
