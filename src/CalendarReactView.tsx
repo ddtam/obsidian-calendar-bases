@@ -278,10 +278,13 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
     calendarRef.current?.getApi().gotoDate(computeRelevantDate(entries));
   }, [entries, windowRange, remountKey]);
 
+  // On phones the toolbar is one compact row: no year jumps, a short month
+  // title, and Month / Week as a small M / W toggle (styled in styles.css).
+  const isPhone = Platform.isPhone;
   const headerToolbar = {
     left: windowRange ? "" : "dayGridMonth,dayGridWeek",
     center: "title",
-    right: "prevYear,prev,today,next,nextYear",
+    right: isPhone ? "prev,today,next" : "prevYear,prev,today,next,nextYear",
   };
 
   // When a fixed window is set, the grid is snapped to whole weeks, so
@@ -749,8 +752,8 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
       titleFormat={titleFormat}
       buttonText={{
         today: "Today",
-        month: "Month",
-        week: "Week",
+        month: isPhone ? "M" : "Month",
+        week: isPhone ? "W" : "Week",
       }}
       navLinks={false}
       events={events}
@@ -788,8 +791,20 @@ export const CalendarReactView: React.FC<CalendarReactViewProps> = ({
         // 6-week fixed height in month view; a single week in week view
         // (fixedWeekCount defaults to true and would otherwise expand the
         // week view to a full month grid).
-        dayGridMonth: { fixedWeekCount: true },
-        dayGridWeek: { fixedWeekCount: false },
+        // On phones the titles are short: "Sep 2026" for a month, and
+        // "Aug 30 – Sep 5" for a week, without the year.
+        dayGridMonth: {
+          fixedWeekCount: true,
+          ...(isPhone
+            ? { titleFormat: { year: "numeric", month: "short" } }
+            : {}),
+        },
+        dayGridWeek: {
+          fixedWeekCount: false,
+          ...(isPhone
+            ? { titleFormat: { month: "short", day: "numeric" } }
+            : {}),
+        },
       }}
       fixedMirrorParent={document.body ?? undefined}
       eventDurationEditable={false}

@@ -212,21 +212,14 @@ body {
   padding-inline: 0 !important;
 }
 
-/* On phones the readable column still leaves a side margin, so the calendar sits
- * inset while wide tables break out to the screen edge. Match that: full-bleed
- * the calendar to the viewport width on phones only (`.is-phone`), so it starts
- * flush with the screen like a table. iPad (`.is-tablet`) keeps the column width
- * from the rule above. */
-.is-phone .markdown-preview-view [class^="el-"]:has(.cbfork-container),
-.is-phone .markdown-preview-view [class*=" el-"]:has(.cbfork-container),
-.is-phone
-  :is(.markdown-preview-view, .markdown-source-view)
-  .internal-embed.bases-embed:has(.cbfork-container) {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  margin-left: calc(50% - 50vw) !important;
-  margin-right: 0 !important;
-}
+/* No full-bleed on phones. 0.3.13 to 0.3.24 stretched the embed to 100vw with
+ * `margin-left: calc(50% - 50vw)`, which assumes the text column is centred
+ * on the screen. In live preview Minimal pins each block's margin to the
+ * column with a more specific `!important` rule, so the 100vw embed started
+ * at the column's left edge and ran off the right of the screen: the page
+ * scrolled sideways. Obsidian 1.15 has its own phone full-bleed for Bases
+ * embeds (`--bases-embed-width`), which themes such as Minimal turn off, so
+ * the calendar now follows whatever the theme does for Bases. */
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Calendar view — appearance (single source of truth)
@@ -318,6 +311,48 @@ body {
 
   .fc-button-group {
     gap: var(--size-2-2);
+  }
+
+  /* Phones: one compact row. The code drops the year jumps, shortens the
+   * month title, and labels Month / Week as M / W; here the M / W pair
+   * becomes a small segmented toggle and the title shrinks to fit. */
+  .is-phone & {
+    .fc-header-toolbar {
+      flex-wrap: nowrap;
+      padding: 6px 4px !important;
+    }
+
+    /* The title may shrink and wrap, so a long one (a fixed window's date
+     * range) takes a second line instead of pushing the buttons off. */
+    .fc-toolbar-chunk:nth-child(2) {
+      min-width: 0;
+    }
+
+    .fc-toolbar-title {
+      font-size: 16px !important;
+      text-wrap: balance;
+    }
+
+    .fc-toolbar-chunk:first-child .fc-button-group {
+      gap: 0;
+      background-color: var(--background-modifier-hover);
+      border-radius: var(--button-radius);
+      padding: 2px;
+    }
+
+    .fc-toolbar-chunk:first-child .fc-button {
+      min-width: 28px;
+      padding: 2px 6px !important;
+    }
+
+    .fc-toolbar-chunk:first-child .fc-button-active {
+      background-color: var(--background-primary) !important;
+      color: var(--text-normal) !important;
+    }
+
+    .fc-toolbar-chunk:last-child .fc-button {
+      padding: 4px !important;
+    }
   }
 
   .fc .fc-button {
