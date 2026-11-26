@@ -287,9 +287,27 @@ body {
     border-collapse: separate !important;
   }
 
+  /* FullCalendar lays the toolbar out as one flex row that never wraps, so in
+   * a narrow pane or on a phone its three chunks (view buttons, title,
+   * navigation) are wider than the calendar. In a .base file the view then
+   * scrolls sideways; in an embed `.bases-view` clips the navigation buttons.
+   * Let the chunks wrap. The title chunk takes the free space and centres its
+   * text, which keeps it centred on one row; the navigation chunk keeps to
+   * the right when it moves to its own line. */
   .fc-header-toolbar {
     margin-bottom: 0px !important;
     padding: 8px !important;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .fc-header-toolbar .fc-toolbar-chunk:last-child {
+    margin-left: auto;
   }
 
   .fc-toolbar-title {
